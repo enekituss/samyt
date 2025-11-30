@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bus Burgos | Mapa y Buscador en Vivo</title>
+    <title>Bus Burgos | Mapa y Buscador en Vivo (Auto-Refresco)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -66,7 +66,7 @@
             transform: scale(0.9);
         }
         .bus-icon:hover {
-             transform: scale(1.1);
+            transform: scale(1.1);
         }
         /* Estilo para los marcadores de parada (Ajustado para mejor control con Leaflet) */
         .stop-icon {
@@ -164,9 +164,9 @@
         // === ADVERTENCIA CRÍTICA: PROBLEMA DE CORS ===
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
         const CORS_PROXY = 'https://corsproxy.io/?'; 
-        const POLLING_LINE_MS = 15000; 
-        // Polling más lento para el monitor global del buscador
-        const POLLING_GLOBAL_MS = 60000; // Aumentado a 60s
+        const POLLING_LINE_MS = 15000; // Refresco de buses de la línea activa (15s)
+        const POLLING_STOP_MS = 10000; // NUEVO: Refresco de estimaciones de parada (10s)
+        const POLLING_GLOBAL_MS = 60000; // Refresco global para el buscador (60s)
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
 
@@ -249,9 +249,12 @@
         let busMarkersLayer;
         let routeLineLayer;
         let stopMarkersLayer;
+        
         // Intervalos de Polling
         let globalMonitorInterval; 
         let currentLineMonitorInterval; 
+        let stopEstimationInterval; // NUEVO: Intervalo para el refresco de parada
+        let currentStopMarker = null; // NUEVO: Referencia al marcador de parada con popup abierto
 
         const allRoutes = {}; // Caché de rutas (geometría y variantes)
         const stopDataCache = {}; // Caché de datos de paradas
@@ -283,7 +286,6 @@
             if (isFullscreen) {
                 mainContent.style.display = 'none';
                 // Cambiar el PATH a Salir de Pantalla Completa (Minimize)
-                // Usamos el icono que parece una X para cerrar el fullscreen
                 fullscreenIconPath.setAttribute('d', 'M6 18L18 6M6 6l12 12'); 
             } else {
                 mainContent.style.display = 'block';
@@ -292,7 +294,6 @@
             }
 
             // Es CRÍTICO llamar a invalidateSize para que Leaflet recalcule las dimensiones
-            // Nota: L.map.invalidateSize() funciona correctamente, no se necesita el timeout.
             map.invalidateSize();
         }
 
@@ -397,7 +398,7 @@
             const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
             
             // Determinar si es una llamada de Polling (recurrentes y tolerantes a fallos)
-            const isPollingCall = resourceId === 'resourceVehicles';
+            const isPollingCall = resourceId === 'resourceVehicles' || resourceId === 'resourceEstimations';
 
             try {
                 return await fetchWithRetry(targetUrl, 3, isPollingCall); 
@@ -431,6 +432,9 @@
             searchButton.onclick = searchBusById;
             fullscreenBtn.onclick = toggleMapFullscreen; // Asignar evento al botón de pantalla completa
             
+            // NUEVO: Manejar el cierre de popup para detener el monitor de parada
+            map.on('popupclose', stopStopEstimationMonitor); 
+
             busSearchInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') searchBusById();
             });
@@ -519,7 +523,7 @@
                 // Ahora que los marcadores de la línea están cargados, buscamos el bus y centramos
                 const marker = busMarkers.get(busId);
                 if (marker) {
-                    // **FIX DEL FALLO 2:** Centrar el mapa después de que la línea se ha cargado.
+                    // Centrar el mapa
                     map.setView([busData.lat, busData.lng], 16);
                     marker.openPopup();
                     hideLoading();
@@ -546,13 +550,10 @@
             
             // Función de polling para actualizar los marcadores de la línea actual
             const poller = async () => {
-                // Obtener datos del vehículo solo de la línea seleccionada (más rápido que la caché global)
                 try {
                     const vehiclesData = await fetchBurgosAPI('resourceVehicles', lineId);
                     updateBusMarkers(lineId, vehiclesData);
                 } catch (e) {
-                    // **MODIFICACIÓN:** Silenciamos el error final 403 del monitor de línea. 
-                    // El error se gestiona internamente en fetchWithRetry y no es fatal para el ciclo de polling.
                     console.log(`[Polling Fallido NO fatal] Error al actualizar la Línea ${lineId}. Intentando de nuevo en el próximo ciclo.`);
                 }
             };
@@ -561,9 +562,42 @@
             currentLineMonitorInterval = setInterval(poller, POLLING_LINE_MS);
             console.log(`Monitor de Línea ${lineId} iniciado: Polling cada ${POLLING_LINE_MS / 1000}s`);
         }
+        
+        // NUEVO: Funciones para el monitor de estimaciones de parada
+        function stopStopEstimationMonitor() {
+            if (stopEstimationInterval) {
+                clearInterval(stopEstimationInterval);
+                stopEstimationInterval = null;
+            }
+            currentStopMarker = null;
+        }
 
+        function startStopEstimationMonitor(lineId, stopId, marker) {
+            stopStopEstimationMonitor();
+            
+            currentStopMarker = marker; // Almacenar referencia
+            
+            // Función de polling
+            const poller = async () => {
+                // Solo recargar si el popup sigue abierto
+                if (marker.getPopup().isOpen()) {
+                    await loadEstimationsForStop(lineId, stopId, marker, true);
+                } else {
+                    stopStopEstimationMonitor();
+                }
+            };
+
+            // Ejecutar inmediatamente y luego iniciar el intervalo
+            poller(); 
+            stopEstimationInterval = setInterval(poller, POLLING_STOP_MS);
+            console.log(`Monitor de Parada ${stopId} iniciado: Polling cada ${POLLING_STOP_MS / 1000}s`);
+        }
+        
         async function handleLineChange(event) {
             const lineId = event.target.value;
+
+            // Detener el monitor de parada si hubiera uno
+            stopStopEstimationMonitor();
 
             if (!lineId) {
                 stopLineMonitor(); // Detener si no hay línea seleccionada
@@ -687,7 +721,6 @@
                          stopDataCache[lineId][nodeNum] = fullNodeData;
                     }
                     
-                    // **FIX:** Usar el DivIcon más limpio
                     const marker = L.marker([fullNodeData.lat, fullNodeData.lng], {
                         icon: L.divIcon({
                             className: 'stop-icon', // Usar el estilo definido en <style>
@@ -698,10 +731,15 @@
                         })
                     }).addTo(stopMarkersLayer);
                     
+                    marker.stopId = nodeNum; // Almacenar el ID de parada en el marcador
+                    marker.lineId = lineId; // Almacenar el ID de línea
+
                     marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">${fullNodeData.name} (${nodeNum})<br>Cargando horarios...</div>`);
                     
+                    // Al abrir el popup, iniciamos el monitor de refresco
                     marker.on('popupopen', (e) => {
-                        loadEstimationsForStop(lineId, nodeNum, e.target);
+                        // Iniciar el monitor de parada
+                        startStopEstimationMonitor(lineId, nodeNum, e.target);
                     });
                 });
 
@@ -710,21 +748,31 @@
             }
         }
 
-        async function loadEstimationsForStop(lineId, stopId, marker) {
+        /**
+         * @function loadEstimationsForStop
+         * @description Carga y actualiza el contenido del popup con las estimaciones.
+         * @param {string} lineId - ID de la línea actual.
+         * @param {string} stopId - ID de la parada.
+         * @param {L.Marker} marker - Marcador de Leaflet con el popup abierto.
+         * @param {boolean} isPollingUpdate - Si la llamada proviene del monitor (para no mostrar 'Cargando...' la primera vez).
+         */
+        async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) {
             let stopName = stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`;
+            const stopNameHeader = `<div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>`;
 
-            marker.setPopupContent(`
-                <div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>
-                <div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>
-            `);
+            if (!isPollingUpdate) {
+                marker.getPopup().setContent(`
+                    ${stopNameHeader}
+                    <div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>
+                `);
+            }
 
             try {
-                // FIX 403: Usar una consulta global ('')
                 const estimationsData = await fetchBurgosAPI('resourceEstimations', '', { 
                     'nodoIds': stopId,
                 });
 
-                let popupContent = `<div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>`;
+                let popupContent = stopNameHeader;
                 
                 let foundEstimations = false;
                 const allEstimates = [];
@@ -753,13 +801,22 @@
                 allEstimates.sort((a, b) => a.seconds - b.seconds);
 
                 if (allEstimates.length > 0) {
-                    popupContent += `<table class="min-w-full text-sm"><thead><tr><th class="text-left font-semibold text-gray-700">Línea/Destino</th><th class="text-right font-semibold text-gray-700">Llegada</th></tr></thead><tbody>`;
+                    popupContent += `
+                        <div class="text-xs text-gray-500 text-center mb-1">Actualizado: ${new Date().toLocaleTimeString()}</div>
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr>
+                                    <th class="text-left font-semibold text-gray-700">Línea/Destino</th>
+                                    <th class="text-right font-semibold text-gray-700">Llegada</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
 
                     allEstimates.forEach(est => {
                         popupContent += `<tr>
                                             <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
                                             <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
-                                         </tr>`;
+                                        </tr>`;
                         foundEstimations = true;
                     });
                     popupContent += `</tbody></table>`;
@@ -772,10 +829,17 @@
                 // Usamos una función anónima para que se ejecute en el contexto de la ventana
                 popupContent += `<button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full mt-3">Pantalla Completa</button>`; 
 
-                marker.setPopupContent(popupContent);
+                marker.getPopup().setContent(popupContent);
+
+                // Forzar un refresh del tamaño del popup (especialmente importante si el contenido cambia de tamaño)
+                marker.update(); 
 
             } catch (error) {
-                marker.setPopupContent(`<div class="text-red-600 text-center">Error al cargar horarios. Por favor, intente de nuevo.</div>`);
+                // Si la actualización falla (e.g., error 403 o red), mostramos el error sin detener el polling
+                marker.getPopup().setContent(`
+                    ${stopNameHeader}
+                    <div class="text-red-600 text-center">Error al cargar horarios. Reintentando...</div>
+                `);
                 console.error("Error al cargar estimaciones:", error);
             }
         }
@@ -823,7 +887,7 @@
                     <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId} (Línea ${lineId})</div>
                     <p class="text-sm mt-2">Destino: <span class="font-semibold">${destination}</span></p>
                     ${fleetInfo}
-                    <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Actualización cada ${POLLING_LINE_MS / 1000}s)</p>
+                    <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Bus: ${POLLING_LINE_MS / 1000}s)</p>
                     <button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full">Pantalla Completa</button> <!-- Botón del popup -->
                 `;
                 
@@ -835,7 +899,6 @@
             }
         }
         
-        // **FIX DEL FALLO 3:** Ahora acepta los datos de vehículos específicos de la línea
         function updateBusMarkers(lineId, vehiclesData) {
             // vehiclesData contiene solo los buses de la línea seleccionada
             const vehicles = vehiclesData || [];
@@ -870,6 +933,8 @@
                     newMarker.on('popupopen', (e) => {
                         // El evento onclick del botón llama a toggleMapFullscreen()
                         loadNextStopEstimation(bus.id, lineId, e.target);
+                        // Asegurarse de que el monitor de parada se detiene si se abre un popup de bus
+                        stopStopEstimationMonitor();
                     });
                     
                     busMarkers.set(busId, newMarker);
