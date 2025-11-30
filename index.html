@@ -13,11 +13,40 @@
     <style>
         /* Estilo base del mapa */
         #map {
-            height: 70vh;
+            height: 55vh; /* REDUCIDO para ser más pequeño por defecto */
             min-height: 400px;
             width: 100%;
             border-radius: 0.75rem; 
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: height 0.4s ease, border-radius 0.4s ease; /* Transición para el cambio de tamaño */
+        }
+        /* Clase para el modo pantalla completa del mapa */
+        #map.map-fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 100vh; /* Ocupa toda la altura */
+            min-height: 100vh;
+            border-radius: 0; /* Sin bordes redondeados en fullscreen */
+            z-index: 999; /* Asegura que esté por encima de todo */
+        }
+        /* Estilo para el botón del popup de Leaflet (Para pantalla completa) */
+        .leaflet-popup-content .fullscreen-toggle-btn {
+            background-color: #f3f4f6;
+            border: 1px solid #d1d5db;
+            padding: 4px 8px;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            margin-top: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+            transition: background-color 0.2s;
+        }
+        .leaflet-popup-content .fullscreen-toggle-btn:hover {
+            background-color: #e5e7eb;
         }
         /* Estilo para los marcadores de bus */
         .bus-icon {
@@ -77,7 +106,7 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8 font-sans">
 
-    <div class="max-w-7xl mx-auto">
+    <div id="main-content" class="max-w-7xl mx-auto"> <!-- Añadido ID para ocultar/mostrar -->
         <header class="text-center mb-8">
             <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 border-b-2 border-blue-500 pb-2">🚍 Bus Burgos en Tiempo Real</h1>
             <p class="text-gray-600 mt-2">Localización de vehículos y horarios de parada en toda la red.</p>
@@ -110,32 +139,32 @@
 
             <div id="status-message" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
         </div>
+    </div>
 
-        <div class="relative">
-            <div id="map"></div>
-            <div id="loading-overlay" class="loading-overlay hidden">
-                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p class="mt-4 text-lg font-semibold text-gray-700">Iniciando monitor en tiempo real...</p>
-            </div>
+    <div class="relative">
+        <!-- Botón de Pantalla Completa para el Mapa -->
+        <button id="fullscreen-btn" class="absolute top-2 right-2 z-[1001] bg-white text-gray-700 p-2 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out">
+            <!-- Icono por defecto (Expandir) -->
+            <svg id="fullscreen-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path id="fullscreen-path" stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 4l-5-5" />
+            </svg>
+        </button>
+        
+        <div id="map"></div>
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-lg font-semibold text-gray-700">Iniciando monitor en tiempo real...</p>
         </div>
     </div>
 
     <script>
         // === ADVERTENCIA CRÍTICA: PROBLEMA DE CORS ===
-        // El funcionamiento de esta aplicación depende al 100% de que el servicio de proxy
-        // externo (corsproxy.io) esté activo y pueda reenviar las peticiones a la API del
-        // Ayuntamiento de Burgos. Si el proxy falla, la aplicación dejará de mostrar datos.
-        // === FIN ADVERTENCIA ===
-
-        // --- Configuración Global ---
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
-        const CORS_PROXY = 'https://corsproxy.io/?'; // Proxy para evitar errores CORS
-        // Reducimos el polling de la línea seleccionada para una mejor experiencia
+        const CORS_PROXY = 'https://corsproxy.io/?'; 
         const POLLING_LINE_MS = 15000; 
-        // Polling más lento para el monitor global del buscador
         const POLLING_GLOBAL_MS = 45000; 
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
@@ -234,8 +263,37 @@
         const loadingOverlay = document.getElementById('loading-overlay');
         const busSearchInput = document.getElementById('bus-search');
         const searchButton = document.getElementById('search-button');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const mapContainer = document.getElementById('map');
+        const fullscreenIconPath = document.getElementById('fullscreen-path'); // Referencia al PATH del SVG
+
 
         // --- Funciones de Utilidad y UI ---
+
+        /**
+         * @function toggleMapFullscreen
+         * @description Alterna el estado de pantalla completa del mapa y ajusta su tamaño.
+         */
+        function toggleMapFullscreen() {
+            const isFullscreen = mapContainer.classList.toggle('map-fullscreen');
+            const mainContent = document.getElementById('main-content');
+            
+            // Ocultar/Mostrar el contenido principal (controles)
+            if (isFullscreen) {
+                mainContent.style.display = 'none';
+                // Cambiar el PATH a Salir de Pantalla Completa (Minimize)
+                // Usamos el icono que parece una X para cerrar el fullscreen
+                fullscreenIconPath.setAttribute('d', 'M6 18L18 6M6 6l12 12'); 
+            } else {
+                mainContent.style.display = 'block';
+                // Cambiar el PATH a Pantalla Completa (Expandir)
+                fullscreenIconPath.setAttribute('d', 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 4l-5-5');
+            }
+
+            // Es CRÍTICO llamar a invalidateSize para que Leaflet recalcule las dimensiones
+            // Nota: L.map.invalidateSize() funciona correctamente, no se necesita el timeout.
+            map.invalidateSize();
+        }
 
         function showLoading(message = "Obteniendo datos en tiempo real...") {
             const loadingText = loadingOverlay.querySelector('p');
@@ -278,7 +336,7 @@
 
         // --- Lógica de la API y Fetching (Optimización de reintentos) ---
 
-        async function fetchWithRetry(url, retries = 3, isPolling = false) { // **MODIFICACIÓN: Añadir isPolling**
+        async function fetchWithRetry(url, retries = 3, isPolling = false) { 
             for (let i = 0; i < retries; i++) {
                 try {
                     // **MODIFICACIÓN: Añadir encabezados para simular Referer y evitar 403**
@@ -341,7 +399,7 @@
             const isPollingCall = resourceId === 'resourceVehicles';
 
             try {
-                return await fetchWithRetry(targetUrl, 3, isPollingCall); // **MODIFICACIÓN: Pasar isPollingCall**
+                return await fetchWithRetry(targetUrl, 3, isPollingCall); 
             } catch (error) {
                 // Solo mostrar error de la UI si no es un polling background
                 if(!isPollingCall) {
@@ -370,6 +428,8 @@
             lineSelect.onchange = handleLineChange;
             routeVariantSelect.onchange = handleRouteVariantChange;
             searchButton.onclick = searchBusById;
+            fullscreenBtn.onclick = toggleMapFullscreen; // Asignar evento al botón de pantalla completa
+            
             busSearchInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') searchBusById();
             });
@@ -707,6 +767,9 @@
                     popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento para esta parada.</p>`;
                 }
 
+                // Usamos una función anónima para que se ejecute en el contexto de la ventana
+                popupContent += `<button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full mt-3">Pantalla Completa</button>`; 
+
                 marker.setPopupContent(popupContent);
 
             } catch (error) {
@@ -759,6 +822,7 @@
                     <p class="text-sm mt-2">Destino: <span class="font-semibold">${destination}</span></p>
                     ${fleetInfo}
                     <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Actualización cada ${POLLING_LINE_MS / 1000}s)</p>
+                    <button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full">Pantalla Completa</button> <!-- Botón del popup -->
                 `;
                 
                 marker.setPopupContent(popupContent);
@@ -802,6 +866,7 @@
                     newMarker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
                     
                     newMarker.on('popupopen', (e) => {
+                        // El evento onclick del botón llama a toggleMapFullscreen()
                         loadNextStopEstimation(bus.id, lineId, e.target);
                     });
                     
@@ -822,6 +887,9 @@
                  ALL_ACTIVE_BUSES.set(bus.id.toString(), { ...bus, lineId });
             });
         }
+        
+        // Exponer la función globalmente para que los popups puedan llamarla
+        window.toggleMapFullscreen = toggleMapFullscreen;
         
         document.addEventListener('DOMContentLoaded', initMap);
     </script>
