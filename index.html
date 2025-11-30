@@ -4,13 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bus Burgos | Mapa y Buscador en Vivo</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Leaflet Polyline Decorator for route arrows (Snake Flow for movement visualization) -->
+    <!-- Incluir Leaflet Polyline Snake Flow para el efecto visual de la ruta -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polyline-snake-flow/0.0.1/L.Polyline.SnakeFlow.min.js"></script>
 
     <style>
@@ -19,15 +16,15 @@
             height: 70vh;
             min-height: 400px;
             width: 100%;
-            border-radius: 0.75rem; /* Más redondeado */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra más profunda */
+            border-radius: 0.75rem; 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
         /* Estilo para los marcadores de bus */
         .bus-icon {
             background-color: #2563EB; /* Azul primario */
             border: 3px solid #1E40AF;
             border-radius: 50%;
-            width: 36px; /* Ligeramente más grande */
+            width: 36px;
             height: 36px;
             text-align: center;
             line-height: 30px;
@@ -42,10 +39,15 @@
         .bus-icon:hover {
              transform: scale(1.1);
         }
-        /* Estilo para los marcadores de parada */
+        /* Estilo para los marcadores de parada (Ajustado para mejor control con Leaflet) */
         .stop-icon {
             background-color: white;
-            border-color: #1E40AF; /* Borde azul */
+            border: 2px solid #1E40AF; /* Borde azul */
+            border-radius: 50%;
+            /* Definimos el tamaño exacto en el CSS */
+            width: 16px; 
+            height: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         /* Estilo para la máscara de carga (Spinner de Tailwind) */
@@ -81,9 +83,7 @@
             <p class="text-gray-600 mt-2">Localización de vehículos y horarios de parada en toda la red.</p>
         </header>
 
-        <!-- Controles, Buscador y Estado -->
         <div class="bg-white p-6 rounded-xl shadow-2xl mb-8">
-            <!-- Buscador de Bus -->
             <div class="mb-6 border-b pb-4">
                 <label for="bus-search" class="block text-sm font-bold text-gray-700 mb-2">🔎 Buscar Autobús por ID:</label>
                 <div class="flex gap-3">
@@ -92,7 +92,6 @@
                 </div>
             </div>
 
-            <!-- Filtros de Línea -->
             <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 items-center">
                 <div class="w-full sm:w-1/2">
                     <label for="line-select" class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Línea:</label>
@@ -112,11 +111,9 @@
             <div id="status-message" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
         </div>
 
-        <!-- Contenedor del Mapa -->
         <div class="relative">
             <div id="map"></div>
             <div id="loading-overlay" class="loading-overlay hidden">
-                <!-- Icono de Spinner de Tailwind -->
                 <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -127,10 +124,19 @@
     </div>
 
     <script>
+        // === ADVERTENCIA CRÍTICA: PROBLEMA DE CORS ===
+        // El funcionamiento de esta aplicación depende al 100% de que el servicio de proxy
+        // externo (corsproxy.io) esté activo y pueda reenviar las peticiones a la API del
+        // Ayuntamiento de Burgos. Si el proxy falla, la aplicación dejará de mostrar datos.
+        // === FIN ADVERTENCIA ===
+
         // --- Configuración Global ---
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
         const CORS_PROXY = 'https://corsproxy.io/?'; // Proxy para evitar errores CORS
-        const POLLING_INTERVAL_MS = 35000; // Intervalo de polling aumentado a 20s para mayor estabilidad
+        // Reducimos el polling de la línea seleccionada para una mejor experiencia
+        const POLLING_LINE_MS = 15000; 
+        // Polling más lento para el monitor global del buscador
+        const POLLING_GLOBAL_MS = 45000; 
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
 
@@ -139,9 +145,8 @@
             '18', '19', '20', '21', '22', '23', '73', '87', '88', '89', 'C1', 'C2'
         ];
         
-        // --- REQUISITO: Datos Estáticos de la Flota (Tabla proporcionada por el usuario) ---
+        // --- REQUISITO: Datos Estáticos de la Flota ---
         const BUS_FLEET_DATA = {
-            // ID: { Modelo, Matrícula, Calca }
             '134': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '126585 DVG', calca: '134' },
             '135': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '123566 DVG', calca: '135' },
             '137': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127791 FJF', calca: '137' },
@@ -214,7 +219,9 @@
         let busMarkersLayer;
         let routeLineLayer;
         let stopMarkersLayer;
-        let globalMonitorInterval;
+        // Intervalos de Polling
+        let globalMonitorInterval; 
+        let currentLineMonitorInterval; 
 
         const allRoutes = {}; // Caché de rutas (geometría y variantes)
         const stopDataCache = {}; // Caché de datos de paradas
@@ -255,53 +262,62 @@
 
         /**
          * @function secondsToTime
-         * @description Convierte segundos a formato "X min" (REQUISITO: solo minutos)
+         * @description Convierte segundos a formato "X min" (solo minutos)
          */
         function secondsToTime(seconds) {
             const sec = parseInt(seconds);
             if (isNaN(sec) || sec < 0) return "Desconocido";
 
-            // Redondeamos al minuto más cercano para mostrar solo minutos
             const minutes = Math.floor(sec / 60);
             
             if (minutes === 0) {
-                 // Si es menos de 60 segundos, mostramos '1 min' o 'Inmediato'
                 return sec < 30 ? "Inmediato" : "1 min";
             }
             return `${minutes} min`;
         }
 
-        // --- Lógica de la API y Fetching ---
+        // --- Lógica de la API y Fetching (Optimización de reintentos) ---
 
-        async function fetchWithRetry(url, retries = 3) {
+        async function fetchWithRetry(url, retries = 3, isPolling = false) { // **MODIFICACIÓN: Añadir isPolling**
             for (let i = 0; i < retries; i++) {
                 try {
-                    const response = await fetch(CORS_PROXY + encodeURIComponent(url));
-                    if (!response.ok) {
-                        // Lanzar el error HTTP (incluyendo 403)
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    const text = await response.text();
-                    
-                    // Manejo de respuestas vacías o no JSON (Común en SAE Next cuando no hay datos)
-                    if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
-                         return [];
-                    }
+                    // **MODIFICACIÓN: Añadir encabezados para simular Referer y evitar 403**
+                    const headers = new Headers();
+                    // Simular que la solicitud proviene de la página de rutas de Burgos
+                    headers.append('Referer', BASE_URL); 
 
-                    try {
-                        let jsonText = text;
-                        if (text.startsWith('URL_DECODED:')) {
-                            jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                    const response = await fetch(CORS_PROXY + encodeURIComponent(url), { headers: headers });
+                    
+                    if (!response.ok) {
+                        // Si es un 403 y estamos en modo polling, no lanzar el error de inmediato para reintentar silenciosamente
+                        if (isPolling && response.status === 403 && i < retries - 1) {
+                             console.warn(`[Polling Silencioso] 403 en reintento ${i + 1}. Reintentando...`);
+                        } else {
+                            throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
                         }
-                        return JSON.parse(jsonText);
-                    } catch (e) {
-                        // Si el parseo falla a pesar de que el texto no es nulo/vacío
-                        throw new Error(`Error al procesar la respuesta del servidor.`);
+                    } else {
+                        const text = await response.text();
+                        
+                        if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
+                             return [];
+                        }
+
+                        try {
+                            let jsonText = text;
+                            if (text.startsWith('URL_DECODED:')) {
+                                jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                            }
+                            return JSON.parse(jsonText);
+                        } catch (e) {
+                            throw new Error(`Error al procesar la respuesta del servidor (No es JSON válido).`);
+                        }
                     }
                 } catch (error) {
                     if (i === retries - 1) {
-                        throw new Error(`Error final al obtener ${url.split('p_p_resource_id=')[1].split('&')[0]}: ${error.message}`);
+                        // Lanzar error si es el último reintento
+                        throw new Error(`Error final al obtener datos: ${error.message}`);
                     }
+                    // Espera exponencial antes de reintentar
                     await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
                 }
             }
@@ -321,11 +337,14 @@
 
             const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
             
+            // Determinar si es una llamada de Polling (recurrentes y tolerantes a fallos)
+            const isPollingCall = resourceId === 'resourceVehicles';
+
             try {
-                return await fetchWithRetry(targetUrl);
+                return await fetchWithRetry(targetUrl, 3, isPollingCall); // **MODIFICACIÓN: Pasar isPollingCall**
             } catch (error) {
-                // Notificar error de la API solo en funciones críticas
-                if(resourceId !== 'resourceVehicles' && resourceId !== 'resourceEstimationVehicle') {
+                // Solo mostrar error de la UI si no es un polling background
+                if(!isPollingCall) {
                     showStatus(error.message, true);
                 }
                 throw error;
@@ -364,7 +383,6 @@
                 attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             }).addTo(map);
 
-            // Inicializar capas
             busMarkersLayer = L.layerGroup().addTo(map);
             routeLineLayer = L.layerGroup().addTo(map);
             stopMarkersLayer = L.layerGroup().addTo(map);
@@ -372,11 +390,11 @@
             loadAllLines();
             setupEventListeners();
             
-            // REQUISITO: Iniciar el monitor global para alimentar el buscador
+            // Iniciar el monitor global (más lento) para alimentar el buscador
             startGlobalVehicleMonitor();
         }
-
-        // --- REQUISITO: Buscador Global (Carga Pesada) ---
+        
+        // --- Buscador Global (Solo caché, no dibuja) ---
 
         function startGlobalVehicleMonitor() {
             if (globalMonitorInterval) {
@@ -384,16 +402,16 @@
             }
             
             updateAllVehiclesGlobally();
-            globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_INTERVAL_MS);
-            showStatus("Monitor Global de Buses iniciado en segundo plano. Búsqueda por ID disponible.", false);
+            globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_GLOBAL_MS);
+            console.log(`Monitor Global de Buses iniciado: Polling cada ${POLLING_GLOBAL_MS / 1000}s`);
         }
         
         async function updateAllVehiclesGlobally() {
-            // Carga todas las líneas de forma concurrente para la caché global
+            // Carga todas las líneas de forma concurrente para la caché global del buscador
             const linePromises = ALL_LINES.map(lineId => 
                 fetchBurgosAPI('resourceVehicles', lineId)
                     .then(data => ({ lineId, data }))
-                    .catch(() => ({ lineId, data: [] }))
+                    .catch(() => ({ lineId, data: [] })) // Silenciar errores para no inundar la consola
             );
 
             const results = await Promise.all(linePromises);
@@ -414,11 +432,6 @@
             // Reemplazar la caché global
             ALL_ACTIVE_BUSES.clear();
             newActiveBuses.forEach((bus, id) => ALL_ACTIVE_BUSES.set(id, bus));
-            
-            // Si hay una línea seleccionada, actualizamos su capa de markers
-            if (lineSelect.value) {
-                updateBusMarkers(lineSelect.value);
-            }
         }
 
         function searchBusById() {
@@ -431,7 +444,7 @@
             const busData = ALL_ACTIVE_BUSES.get(busId);
             
             if (!busData) {
-                showStatus(`Autobús ID ${busId} no encontrado o no activo. Intente de nuevo en ${POLLING_INTERVAL_MS / 1000} segundos.`, true);
+                showStatus(`Autobús ID ${busId} no encontrado o no activo. Intente de nuevo en ${POLLING_GLOBAL_MS / 1000} segundos.`, true);
                 return;
             }
 
@@ -439,26 +452,59 @@
 
             // 1. Seleccionar la línea en los dropdowns
             lineSelect.value = busData.lineId;
-            lineSelect.dispatchEvent(new Event('change')); // Carga la línea/ruta
-
-            // 2. Centrar el mapa en el bus
-            setTimeout(() => {
+            
+            // 2. Disparar el cambio de línea para cargar la ruta y los marcadores
+            handleLineChange({ target: lineSelect }).then(() => {
+                // Ahora que los marcadores de la línea están cargados, buscamos el bus y centramos
                 const marker = busMarkers.get(busId);
                 if (marker) {
+                    // **FIX DEL FALLO 2:** Centrar el mapa después de que la línea se ha cargado.
                     map.setView([busData.lat, busData.lng], 16);
                     marker.openPopup();
+                    hideLoading();
+                    showStatus(`Bus ID ${busId} encontrado en Línea ${busData.lineId}.`, false);
+                } else {
+                    // Esto puede ocurrir si el bus desapareció entre el polling global y la carga de la línea
+                    hideLoading();
+                    showStatus(`Bus ID ${busId} ya no está activo en Línea ${busData.lineId}.`, true);
                 }
-                hideLoading();
-            }, 1000); // Pequeña espera para que las capas se dibujen
-
-            showStatus(`Bus ID ${busId} encontrado en Línea ${busData.lineId}.`, false);
+            });
         }
 
-        // --- Lógica de Manejo de Filtros y Capas ---
+        // --- Lógica de Manejo de Filtros y Polling de Línea Activa ---
+
+        function stopLineMonitor() {
+            if (currentLineMonitorInterval) {
+                clearInterval(currentLineMonitorInterval);
+                currentLineMonitorInterval = null;
+            }
+        }
+        
+        function startLineMonitor(lineId) {
+            stopLineMonitor(); // Asegura que solo haya un monitor activo
+            
+            // Función de polling para actualizar los marcadores de la línea actual
+            const poller = async () => {
+                // Obtener datos del vehículo solo de la línea seleccionada (más rápido que la caché global)
+                try {
+                    const vehiclesData = await fetchBurgosAPI('resourceVehicles', lineId);
+                    updateBusMarkers(lineId, vehiclesData);
+                } catch (e) {
+                    // El error 403 está siendo manejado silenciosamente en fetchBurgosAPI/fetchWithRetry
+                    console.error(`Error en el monitor de la Línea ${lineId} (Error no fatal, intentando de nuevo):`, e.message);
+                }
+            };
+            
+            poller(); // Ejecutar inmediatamente
+            currentLineMonitorInterval = setInterval(poller, POLLING_LINE_MS);
+            console.log(`Monitor de Línea ${lineId} iniciado: Polling cada ${POLLING_LINE_MS / 1000}s`);
+        }
 
         async function handleLineChange(event) {
             const lineId = event.target.value;
+
             if (!lineId) {
+                stopLineMonitor(); // Detener si no hay línea seleccionada
                 clearMapLayers();
                 routeVariantSelect.innerHTML = '<option value="">Seleccione una línea primero</option>';
                 routeVariantSelect.disabled = true;
@@ -467,6 +513,7 @@
             
             showLoading(`Cargando rutas para la Línea ${lineId}...`);
             await loadRouteVariants(lineId);
+            
             hideLoading();
         }
 
@@ -480,6 +527,7 @@
                 if (!routeData || routeData.length === 0) {
                     showStatus(`Línea ${lineId} sin rutas activas o datos no disponibles.`, false);
                     clearMapLayers();
+                    stopLineMonitor(); // Detener monitor si no hay rutas
                     routeVariantSelect.disabled = true;
                     return;
                 }
@@ -497,12 +545,13 @@
                 // Cargar la primera variante por defecto
                 if (routeData.length > 0) {
                     routeVariantSelect.value = routeData[0].id;
-                    handleRouteVariantChange({ target: routeVariantSelect });
+                    await handleRouteVariantChange({ target: routeVariantSelect, isDefault: true });
                 }
 
             } catch (error) {
-                showStatus(`Error al cargar variantes de la Línea ${lineId}.`, true);
+                showStatus(`Error al cargar variantes de la Línea ${lineId}. Revise la consola.`, true);
                 clearMapLayers();
+                stopLineMonitor();
             }
         }
         
@@ -511,14 +560,18 @@
             const lineId = lineSelect.value;
             if (!variantId) {
                 clearMapLayers();
+                stopLineMonitor();
                 return;
             }
             
-            showLoading("Dibujando ruta y cargando buses...");
+            showLoading("Dibujando ruta y cargando paradas...");
             await renderRouteAndStops(lineId, variantId);
             
+            // Iniciar monitor de la línea activa para refrescar los buses
+            startLineMonitor(lineId); 
+            
             hideLoading();
-            showStatus(`Línea ${lineId} cargada.`, false);
+            showStatus(`Línea ${lineId} cargada. Sentido: ${event.target.options[event.target.selectedIndex].text}`, false);
         }
 
         function clearMapLayers() {
@@ -529,16 +582,15 @@
         }
 
         async function renderRouteAndStops(lineId, variantId) {
-            clearMapLayers();
+            // No limpiar la capa de buses aquí, ya que el polling puede estar activo
+            routeLineLayer.clearLayers();
+            stopMarkersLayer.clearLayers();
             
             const variant = allRoutes[lineId].find(v => v.id === variantId);
             if (!variant) return;
 
             drawRoutePath(variant.latLngs);
             await drawStops(lineId, variant.routeNode);
-            
-            // Dibuja los buses de la línea seleccionada (usando la caché global)
-            updateBusMarkers(lineId);
         }
 
         function drawRoutePath(latLngs) {
@@ -546,10 +598,14 @@
             const path = latLngs.map(p => [p.lat, p.lng]);
             const polyline = L.polyline(path, { color: '#2563EB', weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
             map.fitBounds(polyline.getBounds());
-            L.polyline(path, { color: '#2563EB', weight: 0, flow: {length: 30, trail: 5, color: '#1E40AF', speed: 1} }).addTo(routeLineLayer);
+            
+            // Efecto SnakeFlow
+            if (L.Polyline.SnakeFlow) {
+                 L.polyline(path, { color: '#2563EB', weight: 0, flow: {length: 30, trail: 5, color: '#1E40AF', speed: 1} }).addTo(routeLineLayer);
+            }
         }
 
-        // --- REQUISITO: Paradas (Estimaciones Ordenadas y Globales) ---
+        // --- Lógica de Paradas ---
 
         async function drawStops(lineId, routeNodes) {
             stopMarkersLayer.clearLayers();
@@ -557,7 +613,7 @@
             
             try {
                 const nodesData = await fetchBurgosAPI('resourceNodes', lineId);
-                const nodesMap = new Map(nodesData.map(node => [node.num, node]));
+                const nodesMap = new Map(nodesData.map(node => [node.num.toString(), node])); 
 
                 routeNodes.forEach(routeNode => {
                     const nodeNum = routeNode.num.toString();
@@ -568,18 +624,19 @@
                     if (!stopDataCache[lineId][nodeNum]) {
                          stopDataCache[lineId][nodeNum] = fullNodeData;
                     }
-
+                    
+                    // **FIX:** Usar el DivIcon más limpio
                     const marker = L.marker([fullNodeData.lat, fullNodeData.lng], {
                         icon: L.divIcon({
-                            className: 'stop-icon bg-white border-2 border-blue-600 rounded-full w-4 h-4 text-xs shadow-md',
+                            className: 'stop-icon', // Usar el estilo definido en <style>
                             html: '',
-                            iconSize: [16, 16],
-                            iconAnchor: [8, 8],
+                            iconSize: [16, 16], // Tamaño explícito
+                            iconAnchor: [8, 8],  // Anclaje central
                             popupAnchor: [0, -7]
                         })
                     }).addTo(stopMarkersLayer);
                     
-                    marker.bindPopup('<div class="text-gray-600 font-semibold py-2">Cargando horarios...</div>');
+                    marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">${fullNodeData.name} (${nodeNum})<br>Cargando horarios...</div>`);
                     
                     marker.on('popupopen', (e) => {
                         loadEstimationsForStop(lineId, nodeNum, e.target);
@@ -592,16 +649,19 @@
         }
 
         async function loadEstimationsForStop(lineId, stopId, marker) {
-            marker.setPopupContent(`<div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>`);
+            let stopName = stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`;
+
+            marker.setPopupContent(`
+                <div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>
+                <div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>
+            `);
 
             try {
-                // FIX 403: Pasamos una cadena vacía ('') como lineId para forzar una consulta global 
-                // que el servidor puede autorizar más fácilmente que una consulta específica.
+                // FIX 403: Usar una consulta global ('')
                 const estimationsData = await fetchBurgosAPI('resourceEstimations', '', { 
                     'nodoIds': stopId,
                 });
 
-                let stopName = stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : 'Parada Desconocida';
                 let popupContent = `<div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>`;
                 
                 let foundEstimations = false;
@@ -627,14 +687,13 @@
                     }
                 }
                 
-                // REQUISITO: Ordenar por tiempo de llegada (segundos)
+                // Ordenar por tiempo de llegada
                 allEstimates.sort((a, b) => a.seconds - b.seconds);
 
                 if (allEstimates.length > 0) {
                     popupContent += `<table class="min-w-full text-sm"><thead><tr><th class="text-left font-semibold text-gray-700">Línea/Destino</th><th class="text-right font-semibold text-gray-700">Llegada</th></tr></thead><tbody>`;
 
                     allEstimates.forEach(est => {
-                         // REQUISITO: Mostrar solo minutos
                         popupContent += `<tr>
                                             <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
                                             <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
@@ -645,18 +704,18 @@
                 }
                 
                 if (!foundEstimations) {
-                    popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento.</p>`;
+                    popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento para esta parada.</p>`;
                 }
 
                 marker.setPopupContent(popupContent);
 
             } catch (error) {
-                marker.setPopupContent(`<div class="text-red-600 text-center">Error al cargar horarios.</div>`);
+                marker.setPopupContent(`<div class="text-red-600 text-center">Error al cargar horarios. Por favor, intente de nuevo.</div>`);
                 console.error("Error al cargar estimaciones:", error);
             }
         }
         
-        // --- REQUISITO: Lógica de Buses (Popup Simplificado y con Datos de Flota) ---
+        // --- Lógica de Buses ---
 
         function getRouteDestination(lineId, routeId) {
             const lineVariants = allRoutes[lineId];
@@ -667,21 +726,21 @@
         }
 
         async function loadNextStopEstimation(busId, lineId, marker) {
-            const busData = ALL_ACTIVE_BUSES.get(busId.toString());
+            // Buscamos la información del bus en la caché global, que siempre se está actualizando
+            const busData = ALL_ACTIVE_BUSES.get(busId.toString()); 
             const fleetData = BUS_FLEET_DATA[busId];
             
             if (!busData) {
-                marker.setPopupContent(`<div class="text-red-600">Bus ID ${busId} no encontrado.</div>`);
+                marker.setPopupContent(`<div class="text-red-600">Bus ID ${busId} no encontrado o ha desaparecido.</div>`);
                 return;
             }
 
             try {
-                // Obtener Destino a partir de la ruta del bus
                 const destination = getRouteDestination(lineId, busData.ruta);
 
                 let fleetInfo = `
-                    <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg">
-                        <p class="font-semibold text-gray-700">Flota: <span class="text-red-600">Información desconocida</span></p>
+                    <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg border border-red-300">
+                        <p class="font-semibold text-gray-700">Flota: <span class="text-red-600">Información desconocida (ID no mapeado)</span></p>
                     </div>
                 `;
 
@@ -696,11 +755,10 @@
                 }
                 
                 const popupContent = `
-                    <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId}</div>
-                    <p class="text-sm mt-2">Línea: <span class="font-semibold">${lineId}</span></p>
-                    <p class="text-sm">Destino: <span class="font-semibold">${destination}</span></p>
+                    <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId} (Línea ${lineId})</div>
+                    <p class="text-sm mt-2">Destino: <span class="font-semibold">${destination}</span></p>
                     ${fleetInfo}
-                    <p class="text-xs text-gray-500 mt-2">Próxima parada y hora eliminados por petición.</p>
+                    <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Actualización cada ${POLLING_LINE_MS / 1000}s)</p>
                 `;
                 
                 marker.setPopupContent(popupContent);
@@ -711,9 +769,10 @@
             }
         }
         
-        function updateBusMarkers(lineId) {
-            // Filtramos los buses activos que pertenecen a la línea seleccionada
-            const vehicles = Array.from(ALL_ACTIVE_BUSES.values()).filter(bus => bus.lineId === lineId);
+        // **FIX DEL FALLO 3:** Ahora acepta los datos de vehículos específicos de la línea
+        function updateBusMarkers(lineId, vehiclesData) {
+            // vehiclesData contiene solo los buses de la línea seleccionada
+            const vehicles = vehiclesData || [];
             const activeIds = new Set();
             
             // 1. Añadir/Mover buses activos
@@ -722,7 +781,6 @@
                 const marker = busMarkers.get(busId);
                 activeIds.add(busId);
 
-                // **VALIDACIÓN CRÍTICA**
                 if (isNaN(bus.lat) || isNaN(bus.lng)) {
                      console.warn(`Bus ID ${busId} tiene coordenadas inválidas. Omitiendo actualización.`);
                      return; 
@@ -741,7 +799,7 @@
                     });
 
                     const newMarker = L.marker([bus.lat, bus.lng], { icon: icon, title: `Bus ID: ${busId}` }).addTo(busMarkersLayer);
-                    newMarker.bindPopup(`<div class="text-gray-600 font-semibold py-2">Cargando datos del Bus ID ${busId}...</div>`);
+                    newMarker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
                     
                     newMarker.on('popupopen', (e) => {
                         loadNextStopEstimation(bus.id, lineId, e.target);
@@ -758,11 +816,14 @@
                     busMarkers.delete(id);
                 }
             });
+            
+            // 3. Actualizar la caché global de los buses de esta línea (para el buscador)
+            vehicles.forEach(bus => {
+                 ALL_ACTIVE_BUSES.set(bus.id.toString(), { ...bus, lineId });
+            });
         }
         
         document.addEventListener('DOMContentLoaded', initMap);
     </script>
 </body>
-
 </html>
-
