@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Burgos | Mapa y Buscador en Vivo</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Polyline Decorator for route arrows (Snake Flow for movement visualization) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polyline-snake-flow/0.0.1/L.Polyline.SnakeFlow.min.js"></script>
+
+    <style>
+        /* Estilo base del mapa */
+        #map {
+            height: 70vh;
+            min-height: 400px;
+            width: 100%;
+            border-radius: 0.75rem; /* Más redondeado */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra más profunda */
+        }
+        /* Estilo para los marcadores de bus */
+        .bus-icon {
+            background-color: #2563EB; /* Azul primario */
+            border: 3px solid #1E40AF;
+            border-radius: 50%;
+            width: 36px; /* Ligeramente más grande */
+            height: 36px;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+            font-weight: bold;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s ease-out;
+            transform: scale(0.9);
+        }
+        .bus-icon:hover {
+             transform: scale(1.1);
+        }
+        /* Estilo para los marcadores de parada */
+        .stop-icon {
+            background-color: white;
+            border-color: #1E40AF; /* Borde azul */
+        }
+
+        /* Estilo para la máscara de carga (Spinner de Tailwind) */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            border-radius: 0.75rem;
+            transition: opacity 0.3s ease;
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8 font-sans">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 border-b-2 border-blue-500 pb-2">🚍 Bus Burgos en Tiempo Real</h1>
+            <p class="text-gray-600 mt-2">Localización de vehículos y horarios de parada en toda la red.</p>
+        </header>
+
+        <!-- Controles, Buscador y Estado -->
+        <div class="bg-white p-6 rounded-xl shadow-2xl mb-8">
+            <!-- Buscador de Bus -->
+            <div class="mb-6 border-b pb-4">
+                <label for="bus-search" class="block text-sm font-bold text-gray-700 mb-2">🔎 Buscar Autobús por ID:</label>
+                <div class="flex gap-3">
+                    <input type="text" id="bus-search" placeholder="Ej: 152" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
+                    <button id="search-button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-150 ease-in-out">Buscar</button>
+                </div>
+            </div>
+
+            <!-- Filtros de Línea -->
+            <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 items-center">
+                <div class="w-full sm:w-1/2">
+                    <label for="line-select" class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Línea:</label>
+                    <select id="line-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm bg-gray-50">
+                        <option value="">Cargando líneas...</option>
+                    </select>
+                </div>
+
+                <div class="w-full sm:w-1/2">
+                    <label for="route-variant-select" class="block text-sm font-medium text-gray-700 mb-1">Seleccionar Sentido:</label>
+                    <select id="route-variant-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm bg-gray-50" disabled>
+                        <option value="">Seleccione una línea primero</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="status-message" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
+        </div>
+
+        <!-- Contenedor del Mapa -->
+        <div class="relative">
+            <div id="map"></div>
+            <div id="loading-overlay" class="loading-overlay hidden">
+                <!-- Icono de Spinner de Tailwind -->
+                <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-lg font-semibold text-gray-700">Iniciando monitor en tiempo real...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuración Global ---
+        const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
+        const CORS_PROXY = 'https://corsproxy.io/?'; // Proxy para evitar errores CORS
+        const POLLING_INTERVAL_MS = 20000; // Intervalo de polling aumentado a 20s para mayor estabilidad
+        const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
+        const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
+
+        const ALL_LINES = [
+            '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17',
+            '18', '19', '20', '21', '22', '23', '73', '87', '88', '89', 'C1', 'C2'
+        ];
+        
+        // --- REQUISITO: Datos Estáticos de la Flota (Tabla proporcionada por el usuario) ---
+        const BUS_FLEET_DATA = {
+            // ID: { Modelo, Matrícula, Calca }
+            '134': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '126585 DVG', calca: '134' },
+            '135': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '123566 DVG', calca: '135' },
+            '137': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127791 FJF', calca: '137' },
+            '138': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '128054 FJF', calca: '138' },
+            '139': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '128168 FJF', calca: '139' },
+            '167': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127933 JVR', calca: '167' },
+            '168': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '128060 JVR', calca: '168' },
+            '169': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '128117 JVR', calca: '169' },
+            '179': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127327 JZP', calca: '179' },
+            '180': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127360 JZP', calca: '180' },
+            '181': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127463 JZP', calca: '181' },
+            '183': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '127394 JZP', calca: '183' },
+            '184': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '129941 KPK', calca: '184' },
+            '185': { modelo: 'Castrosua CS.40 City Versus GNC', matricula: '129992 KPK', calca: '185' },
+            '187': { modelo: 'Castrosua New City GNC', matricula: '124690 KXD', calca: '187' },
+            '188': { modelo: 'Castrosua New City GNC', matricula: '124852 KXD', calca: '188' },
+            '227': { modelo: 'Castrosua New City GNC', matricula: '184644 KXD', calca: '227' },
+            '170': { modelo: 'Integralia In-Urban', matricula: '3516 JVK', calca: '170' },
+            '189': { modelo: 'Integralia In-Urban', matricula: '8273 LDM', calca: '189' },
+            '171': { modelo: 'Integralia Tatoo', matricula: '3602 JVK', calca: '171' },
+            '190': { modelo: 'Integralia Tatoo', matricula: '8430 LDM', calca: '190' },
+            '157': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8536 JDV', calca: '157' },
+            '158': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8572 JDV', calca: '158' },
+            '159': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8606 JDV', calca: '159' },
+            '160': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8628 JDV', calca: '160' },
+            '161': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8639 JDV', calca: '161' },
+            '162': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8656 JDV', calca: '162' },
+            '163': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8725 JDV', calca: '163' },
+            '164': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8766 JDV', calca: '164' },
+            '165': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8781 JDV', calca: '165' },
+            '166': { modelo: 'Mercedes-Benz Citaro C2', matricula: '8804 JDV', calca: '166' },
+            '173': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3271 JZW', calca: '173' },
+            '174': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3395 JZW', calca: '174' },
+            '175': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3355 JZW', calca: '175' },
+            '176': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3450 JZW', calca: '176' },
+            '177': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3483 JZW', calca: '177' },
+            '178': { modelo: 'Mercedes-Benz Citaro C2', matricula: '3565 JZW', calca: '178' },
+            '212': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3624 JZW', calca: '212' },
+            '213': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3638 JZW', calca: '213' },
+            '214': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3760 JZW', calca: '214' },
+            '215': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3798 JZW', calca: '215' },
+            '216': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3844 JZW', calca: '216' },
+            '217': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3898 JZW', calca: '217' },
+            '218': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3965 JZW', calca: '218' },
+            '219': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3976 JZW', calca: '219' },
+            '220': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '3988 JZW', calca: '220' },
+            '221': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '4005 JZW', calca: '221' },
+            '222': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '4072 JZW', calca: '222' },
+            '223': { modelo: 'Mercedes-Benz Citaro C2 G', matricula: '4104 JZW', calca: '223' },
+            '140': { modelo: 'Noge Cittour GNC', matricula: '4057 FTT', calca: '140' },
+            '141': { modelo: 'Noge Cittour GNC', matricula: '4197 FTT', calca: '141' },
+            '191': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '7507 LJH', calca: '191' },
+            '192': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '7266 LJH', calca: '192' },
+            '193': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '7432 LJH', calca: '193' },
+            '194': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '7552 LJH', calca: '194' },
+            '197': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '3371 MBD', calca: '197' },
+            '198': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '4551 MKF', calca: '198' },
+            '199': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '4568 MKF', calca: '199' },
+            '300': { modelo: 'Solaris Urbino IV 12 CNG', matricula: '4590 MKF', calca: '300' },
+            '228': { modelo: 'Solaris Urbino IV 18 CNG', matricula: '1046 LJK', calca: '228' },
+            '229': { modelo: 'Solaris Urbino IV 18 CNG', matricula: '3449 MBD', calca: '229' },
+            '230': { modelo: 'Solaris Urbino IV 18 CNG', matricula: '3486 MBD', calca: '230' },
+            '231': { modelo: 'Solaris Urbino IV 18 CNG', matricula: '4602 MKF', calca: '231' },
+            '232': { modelo: 'Solaris Urbino IV 18 CNG', matricula: '4622 MKF', calca: '232' },
+            '172': { modelo: 'Vectia Veris.12 Hybrid', matricula: '5485 JWH', calca: '172' }
+        };
+
+        // --- Variables Globales del Estado y Mapa ---
+        let map;
+        let busMarkersLayer;
+        let routeLineLayer;
+        let stopMarkersLayer;
+        let globalMonitorInterval;
+
+        const allRoutes = {}; // Caché de rutas (geometría y variantes)
+        const stopDataCache = {}; // Caché de datos de paradas
+        const busMarkers = new Map(); // Marcadores de la línea actual
+        const ALL_ACTIVE_BUSES = new Map(); // Caché Global para el Buscador
+
+        const lineSelect = document.getElementById('line-select');
+        const routeVariantSelect = document.getElementById('route-variant-select');
+        const statusMessage = document.getElementById('status-message');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const busSearchInput = document.getElementById('bus-search');
+        const searchButton = document.getElementById('search-button');
+
+        // --- Funciones de Utilidad y UI ---
+
+        function showLoading(message = "Obteniendo datos en tiempo real...") {
+            const loadingText = loadingOverlay.querySelector('p');
+            if (loadingText) loadingText.textContent = message;
+            loadingOverlay.classList.remove('hidden');
+            statusMessage.classList.add('hidden');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+
+        function showStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.classList.remove('hidden', 'bg-red-100', 'bg-blue-100', 'text-red-800', 'text-blue-800');
+
+            if (isError) {
+                statusMessage.classList.add('bg-red-100', 'text-red-800');
+                console.error("ERROR de la aplicación:", message);
+            } else {
+                statusMessage.classList.add('bg-blue-100', 'text-blue-800');
+            }
+        }
+
+        /**
+         * @function secondsToTime
+         * @description Convierte segundos a formato "X min" (REQUISITO: solo minutos)
+         */
+        function secondsToTime(seconds) {
+            const sec = parseInt(seconds);
+            if (isNaN(sec) || sec < 0) return "Desconocido";
+
+            // Redondeamos al minuto más cercano para mostrar solo minutos
+            const minutes = Math.floor(sec / 60);
+            
+            if (minutes === 0) {
+                 // Si es menos de 60 segundos, mostramos '1 min' o 'Inmediato'
+                return sec < 30 ? "Inmediato" : "1 min";
+            }
+            return `${minutes} min`;
+        }
+
+        // --- Lógica de la API y Fetching ---
+
+        async function fetchWithRetry(url, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(CORS_PROXY + encodeURIComponent(url));
+                    if (!response.ok) {
+                        // Lanzar el error HTTP (incluyendo 403)
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const text = await response.text();
+                    
+                    // Manejo de respuestas vacías o no JSON (Común en SAE Next cuando no hay datos)
+                    if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
+                         return [];
+                    }
+
+                    try {
+                        let jsonText = text;
+                        if (text.startsWith('URL_DECODED:')) {
+                            jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                        }
+                        return JSON.parse(jsonText);
+                    } catch (e) {
+                        // Si el parseo falla a pesar de que el texto no es nulo/vacío
+                        throw new Error(`Error al procesar la respuesta del servidor.`);
+                    }
+                } catch (error) {
+                    if (i === retries - 1) {
+                        throw new Error(`Error final al obtener ${url.split('p_p_resource_id=')[1].split('&')[0]}: ${error.message}`);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+
+        async function fetchBurgosAPI(resourceId, lineId, extraParams = {}) {
+            const dynamicParams = new URLSearchParams();
+
+            dynamicParams.set(PORTLET_PREFIX + 'formDate', Date.now());
+            dynamicParams.set(PORTLET_PREFIX + 'tipo', '1');
+            dynamicParams.set(PORTLET_PREFIX + 'line', lineId);
+            dynamicParams.set(PORTLET_PREFIX + 'label', lineId);
+
+            for (const key in extraParams) {
+                dynamicParams.set(PORTLET_PREFIX + key, extraParams[key]);
+            }
+
+            const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
+            
+            try {
+                return await fetchWithRetry(targetUrl);
+            } catch (error) {
+                // Notificar error de la API solo en funciones críticas
+                if(resourceId !== 'resourceVehicles' && resourceId !== 'resourceEstimationVehicle') {
+                    showStatus(error.message, true);
+                }
+                throw error;
+            }
+        }
+        
+        // --- Funciones de Inicialización ---
+        
+        function loadAllLines() {
+            lineSelect.innerHTML = '<option value="">Seleccione una línea</option>';
+
+            ALL_LINES.forEach(lineId => {
+                const option = document.createElement('option');
+                option.value = lineId;
+                option.textContent = `Línea ${lineId}`;
+                lineSelect.appendChild(option);
+            });
+            hideLoading();
+            showStatus("Seleccione una línea o use el buscador para empezar.", false);
+        }
+
+        function setupEventListeners() {
+            lineSelect.onchange = handleLineChange;
+            routeVariantSelect.onchange = handleRouteVariantChange;
+            searchButton.onclick = searchBusById;
+            busSearchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') searchBusById();
+            });
+        }
+        
+        function initMap() {
+            map = L.map('map').setView([42.3459, -3.6969], 14);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(map);
+
+            // Inicializar capas
+            busMarkersLayer = L.layerGroup().addTo(map);
+            routeLineLayer = L.layerGroup().addTo(map);
+            stopMarkersLayer = L.layerGroup().addTo(map);
+
+            loadAllLines();
+            setupEventListeners();
+            
+            // REQUISITO: Iniciar el monitor global para alimentar el buscador
+            startGlobalVehicleMonitor();
+        }
+
+        // --- REQUISITO: Buscador Global (Carga Pesada) ---
+
+        function startGlobalVehicleMonitor() {
+            if (globalMonitorInterval) {
+                clearInterval(globalMonitorInterval);
+            }
+            
+            updateAllVehiclesGlobally();
+            globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_INTERVAL_MS);
+            showStatus("Monitor Global de Buses iniciado en segundo plano. Búsqueda por ID disponible.", false);
+        }
+        
+        async function updateAllVehiclesGlobally() {
+            // Carga todas las líneas de forma concurrente para la caché global
+            const linePromises = ALL_LINES.map(lineId => 
+                fetchBurgosAPI('resourceVehicles', lineId)
+                    .then(data => ({ lineId, data }))
+                    .catch(() => ({ lineId, data: [] }))
+            );
+
+            const results = await Promise.all(linePromises);
+            
+            const newActiveBuses = new Map();
+            
+            results.forEach(result => {
+                if (Array.isArray(result.data)) {
+                    result.data.forEach(bus => {
+                        newActiveBuses.set(bus.id.toString(), {
+                            ...bus, 
+                            lineId: result.lineId 
+                        });
+                    });
+                }
+            });
+
+            // Reemplazar la caché global
+            ALL_ACTIVE_BUSES.clear();
+            newActiveBuses.forEach((bus, id) => ALL_ACTIVE_BUSES.set(id, bus));
+            
+            // Si hay una línea seleccionada, actualizamos su capa de markers
+            if (lineSelect.value) {
+                updateBusMarkers(lineSelect.value);
+            }
+        }
+
+        function searchBusById() {
+            const busId = busSearchInput.value.trim();
+            if (!busId || isNaN(busId)) {
+                showStatus("Introduzca un ID de autobús numérico válido.", true);
+                return;
+            }
+
+            const busData = ALL_ACTIVE_BUSES.get(busId);
+            
+            if (!busData) {
+                showStatus(`Autobús ID ${busId} no encontrado o no activo. Intente de nuevo en ${POLLING_INTERVAL_MS / 1000} segundos.`, true);
+                return;
+            }
+
+            showLoading(`Localizando Bus ID ${busId} en Línea ${busData.lineId}...`);
+
+            // 1. Seleccionar la línea en los dropdowns
+            lineSelect.value = busData.lineId;
+            lineSelect.dispatchEvent(new Event('change')); // Carga la línea/ruta
+
+            // 2. Centrar el mapa en el bus
+            setTimeout(() => {
+                const marker = busMarkers.get(busId);
+                if (marker) {
+                    map.setView([busData.lat, busData.lng], 16);
+                    marker.openPopup();
+                }
+                hideLoading();
+            }, 1000); // Pequeña espera para que las capas se dibujen
+
+            showStatus(`Bus ID ${busId} encontrado en Línea ${busData.lineId}.`, false);
+        }
+
+        // --- Lógica de Manejo de Filtros y Capas ---
+
+        async function handleLineChange(event) {
+            const lineId = event.target.value;
+            if (!lineId) {
+                clearMapLayers();
+                routeVariantSelect.innerHTML = '<option value="">Seleccione una línea primero</option>';
+                routeVariantSelect.disabled = true;
+                return;
+            }
+            
+            showLoading(`Cargando rutas para la Línea ${lineId}...`);
+            await loadRouteVariants(lineId);
+            hideLoading();
+        }
+
+        async function loadRouteVariants(lineId) {
+            try {
+                const routeData = await fetchBurgosAPI('resourceRoutes', lineId);
+                allRoutes[lineId] = routeData;
+
+                routeVariantSelect.innerHTML = '<option value="">Seleccione un sentido</option>';
+                
+                if (!routeData || routeData.length === 0) {
+                    showStatus(`Línea ${lineId} sin rutas activas o datos no disponibles.`, false);
+                    clearMapLayers();
+                    routeVariantSelect.disabled = true;
+                    return;
+                }
+
+                routeData.forEach(variant => {
+                    const option = document.createElement('option');
+                    option.value = variant.id;
+                    option.textContent = variant.label;
+                    routeVariantSelect.appendChild(option);
+                });
+                
+                routeVariantSelect.onchange = handleRouteVariantChange;
+                routeVariantSelect.disabled = false;
+                
+                // Cargar la primera variante por defecto
+                if (routeData.length > 0) {
+                    routeVariantSelect.value = routeData[0].id;
+                    handleRouteVariantChange({ target: routeVariantSelect });
+                }
+
+            } catch (error) {
+                showStatus(`Error al cargar variantes de la Línea ${lineId}.`, true);
+                clearMapLayers();
+            }
+        }
+        
+        async function handleRouteVariantChange(event) {
+            const variantId = event.target.value;
+            const lineId = lineSelect.value;
+            if (!variantId) {
+                clearMapLayers();
+                return;
+            }
+            
+            showLoading("Dibujando ruta y cargando buses...");
+            await renderRouteAndStops(lineId, variantId);
+            
+            hideLoading();
+            showStatus(`Línea ${lineId} cargada.`, false);
+        }
+
+        function clearMapLayers() {
+            busMarkersLayer.clearLayers();
+            routeLineLayer.clearLayers();
+            stopMarkersLayer.clearLayers();
+            busMarkers.clear();
+        }
+
+        async function renderRouteAndStops(lineId, variantId) {
+            clearMapLayers();
+            
+            const variant = allRoutes[lineId].find(v => v.id === variantId);
+            if (!variant) return;
+
+            drawRoutePath(variant.latLngs);
+            await drawStops(lineId, variant.routeNode);
+            
+            // Dibuja los buses de la línea seleccionada (usando la caché global)
+            updateBusMarkers(lineId);
+        }
+
+        function drawRoutePath(latLngs) {
+            if (!latLngs || latLngs.length === 0) return;
+            const path = latLngs.map(p => [p.lat, p.lng]);
+            const polyline = L.polyline(path, { color: '#2563EB', weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
+            map.fitBounds(polyline.getBounds());
+            L.polyline(path, { color: '#2563EB', weight: 0, flow: {length: 30, trail: 5, color: '#1E40AF', speed: 1} }).addTo(routeLineLayer);
+        }
+
+        // --- REQUISITO: Paradas (Estimaciones Ordenadas y Globales) ---
+
+        async function drawStops(lineId, routeNodes) {
+            stopMarkersLayer.clearLayers();
+            stopDataCache[lineId] = {};
+            
+            try {
+                const nodesData = await fetchBurgosAPI('resourceNodes', lineId);
+                const nodesMap = new Map(nodesData.map(node => [node.num, node]));
+
+                routeNodes.forEach(routeNode => {
+                    const nodeNum = routeNode.num.toString();
+                    const fullNodeData = nodesMap.get(nodeNum);
+                    
+                    if (!fullNodeData) return;
+
+                    if (!stopDataCache[lineId][nodeNum]) {
+                         stopDataCache[lineId][nodeNum] = fullNodeData;
+                    }
+
+                    const marker = L.marker([fullNodeData.lat, fullNodeData.lng], {
+                        icon: L.divIcon({
+                            className: 'stop-icon bg-white border-2 border-blue-600 rounded-full w-4 h-4 text-xs shadow-md',
+                            html: '',
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8],
+                            popupAnchor: [0, -7]
+                        })
+                    }).addTo(stopMarkersLayer);
+                    
+                    marker.bindPopup('<div class="text-gray-600 font-semibold py-2">Cargando horarios...</div>');
+                    
+                    marker.on('popupopen', (e) => {
+                        loadEstimationsForStop(lineId, nodeNum, e.target);
+                    });
+                });
+
+            } catch (error) {
+                showStatus(`Error al cargar datos de paradas (resourceNodes).`, true);
+            }
+        }
+
+        async function loadEstimationsForStop(lineId, stopId, marker) {
+            marker.setPopupContent(`<div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>`);
+
+            try {
+                // FIX 403: Pasamos una cadena vacía ('') como lineId para forzar una consulta global 
+                // que el servidor puede autorizar más fácilmente que una consulta específica.
+                const estimationsData = await fetchBurgosAPI('resourceEstimations', '', { 
+                    'nodoIds': stopId,
+                });
+
+                let stopName = stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : 'Parada Desconocida';
+                let popupContent = `<div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>`;
+                
+                let foundEstimations = false;
+                const allEstimates = [];
+                
+                if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
+                    const stopData = estimationsData.find(item => item.nodoId === stopId);
+                    
+                    if (stopData && stopData.routeEstimationByNode) {
+                        stopData.routeEstimationByNode.forEach(routeEst => {
+                            if (routeEst.publicEstimationVHExts) {
+                                routeEst.publicEstimationVHExts.forEach(est => {
+                                    if (est.destination) {
+                                        allEstimates.push({
+                                            line: routeEst.line,
+                                            destination: routeEst.destination,
+                                            seconds: est.seconds
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    }
+                }
+                
+                // REQUISITO: Ordenar por tiempo de llegada (segundos)
+                allEstimates.sort((a, b) => a.seconds - b.seconds);
+
+                if (allEstimates.length > 0) {
+                    popupContent += `<table class="min-w-full text-sm"><thead><tr><th class="text-left font-semibold text-gray-700">Línea/Destino</th><th class="text-right font-semibold text-gray-700">Llegada</th></tr></thead><tbody>`;
+
+                    allEstimates.forEach(est => {
+                         // REQUISITO: Mostrar solo minutos
+                        popupContent += `<tr>
+                                            <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
+                                            <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
+                                         </tr>`;
+                        foundEstimations = true;
+                    });
+                    popupContent += `</tbody></table>`;
+                }
+                
+                if (!foundEstimations) {
+                    popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento.</p>`;
+                }
+
+                marker.setPopupContent(popupContent);
+
+            } catch (error) {
+                marker.setPopupContent(`<div class="text-red-600 text-center">Error al cargar horarios.</div>`);
+                console.error("Error al cargar estimaciones:", error);
+            }
+        }
+        
+        // --- REQUISITO: Lógica de Buses (Popup Simplificado y con Datos de Flota) ---
+
+        function getRouteDestination(lineId, routeId) {
+            const lineVariants = allRoutes[lineId];
+            if (!lineVariants) return "Cargando...";
+            // Buscamos la variante cuya ruta interna (routeId) coincida con la ruta del bus
+            const variant = lineVariants.find(v => v.routeNode && v.routeNode.length > 0 && v.routeNode[0].routeId === routeId);
+            return variant ? variant.label : "Desconocido";
+        }
+
+        async function loadNextStopEstimation(busId, lineId, marker) {
+            const busData = ALL_ACTIVE_BUSES.get(busId.toString());
+            const fleetData = BUS_FLEET_DATA[busId];
+            
+            if (!busData) {
+                marker.setPopupContent(`<div class="text-red-600">Bus ID ${busId} no encontrado.</div>`);
+                return;
+            }
+
+            try {
+                // Obtener Destino a partir de la ruta del bus
+                const destination = getRouteDestination(lineId, busData.ruta);
+
+                let fleetInfo = `
+                    <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg">
+                        <p class="font-semibold text-gray-700">Flota: <span class="text-red-600">Información desconocida</span></p>
+                    </div>
+                `;
+
+                if (fleetData) {
+                    fleetInfo = `
+                        <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                            <p><span class="font-semibold text-gray-700">Calca:</span> ${fleetData.calca}</p>
+                            <p><span class="font-semibold text-gray-700">Modelo:</span> ${fleetData.modelo}</p>
+                            <p><span class="font-semibold text-gray-700">Matrícula:</span> ${fleetData.matricula}</p>
+                        </div>
+                    `;
+                }
+                
+                const popupContent = `
+                    <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId}</div>
+                    <p class="text-sm mt-2">Línea: <span class="font-semibold">${lineId}</span></p>
+                    <p class="text-sm">Destino: <span class="font-semibold">${destination}</span></p>
+                    ${fleetInfo}
+                    <p class="text-xs text-gray-500 mt-2">Próxima parada y hora eliminados por petición.</p>
+                `;
+                
+                marker.setPopupContent(popupContent);
+                
+            } catch (error) {
+                marker.setPopupContent(`<div class="text-red-600">Error al cargar info del bus.</div>`);
+                console.error("Error al cargar estimación del vehículo:", error);
+            }
+        }
+        
+        function updateBusMarkers(lineId) {
+            // Filtramos los buses activos que pertenecen a la línea seleccionada
+            const vehicles = Array.from(ALL_ACTIVE_BUSES.values()).filter(bus => bus.lineId === lineId);
+            const activeIds = new Set();
+            
+            // 1. Añadir/Mover buses activos
+            vehicles.forEach(bus => {
+                const busId = bus.id.toString();
+                const marker = busMarkers.get(busId);
+                activeIds.add(busId);
+
+                // **VALIDACIÓN CRÍTICA**
+                if (isNaN(bus.lat) || isNaN(bus.lng)) {
+                     console.warn(`Bus ID ${busId} tiene coordenadas inválidas. Omitiendo actualización.`);
+                     return; 
+                }
+
+                if (marker) {
+                    // Mover el marcador existente
+                    marker.setLatLng([bus.lat, bus.lng]);
+                } else {
+                    // Crear un nuevo marcador si aparece un bus nuevo
+                    const icon = L.divIcon({
+                        className: 'bus-icon',
+                        html: `<span class="leading-none text-sm">${busId}</span>`,
+                        iconSize: [36, 36],
+                        iconAnchor: [18, 18]
+                    });
+
+                    const newMarker = L.marker([bus.lat, bus.lng], { icon: icon, title: `Bus ID: ${busId}` }).addTo(busMarkersLayer);
+                    newMarker.bindPopup(`<div class="text-gray-600 font-semibold py-2">Cargando datos del Bus ID ${busId}...</div>`);
+                    
+                    newMarker.on('popupopen', (e) => {
+                        loadNextStopEstimation(bus.id, lineId, e.target);
+                    });
+                    
+                    busMarkers.set(busId, newMarker);
+                }
+            });
+
+            // 2. Limpiar buses desaparecidos
+            busMarkers.forEach((marker, id) => {
+                if (!activeIds.has(id.toString())) {
+                    busMarkersLayer.removeLayer(marker);
+                    busMarkers.delete(id);
+                }
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', initMap);
+    </script>
+</body>
+</html>
