@@ -165,7 +165,8 @@
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
         const CORS_PROXY = 'https://corsproxy.io/?'; 
         const POLLING_LINE_MS = 15000; 
-        const POLLING_GLOBAL_MS = 45000; 
+        // Polling más lento para el monitor global del buscador
+        const POLLING_GLOBAL_MS = 60000; // Aumentado a 60s
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
 
@@ -550,8 +551,9 @@
                     const vehiclesData = await fetchBurgosAPI('resourceVehicles', lineId);
                     updateBusMarkers(lineId, vehiclesData);
                 } catch (e) {
-                    // El error 403 está siendo manejado silenciosamente en fetchBurgosAPI/fetchWithRetry
-                    console.error(`Error en el monitor de la Línea ${lineId} (Error no fatal, intentando de nuevo):`, e.message);
+                    // **MODIFICACIÓN:** Silenciamos el error final 403 del monitor de línea. 
+                    // El error se gestiona internamente en fetchWithRetry y no es fatal para el ciclo de polling.
+                    console.log(`[Polling Fallido NO fatal] Error al actualizar la Línea ${lineId}. Intentando de nuevo en el próximo ciclo.`);
                 }
             };
             
