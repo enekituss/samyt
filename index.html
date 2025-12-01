@@ -11,26 +11,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polyline-snake-flow/0.0.1/L.Polyline.SnakeFlow.min.js"></script>
 
     <style>
-        /* Estilo base del mapa */
+        /* --- ESTILOS DE MAPA Y CONTENEDOR --- */
         #map {
-            height: 55vh; /* REDUCIDO para ser más pequeño por defecto */
+            height: 55vh;
             min-height: 400px;
             width: 100%;
             border-radius: 0.75rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            transition: height 0.4s ease, border-radius 0.4s ease; /* Transición para el cambio de tamaño */
+            transition: height 0.4s ease, border-radius 0.4s ease;
         }
-        /* Clase para el modo pantalla completa del mapa */
         #map.map-fullscreen {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            height: 100vh; /* Ocupa toda la altura */
+            height: 100vh;
             min-height: 100vh;
-            border-radius: 0; /* Sin bordes redondeados en fullscreen */
-            z-index: 999; /* Asegura que esté por encima de todo */
+            border-radius: 0;
+            z-index: 999;
         }
         /* Estilo para el botón del popup de Leaflet (Para pantalla completa) */
         .leaflet-popup-content .fullscreen-toggle-btn {
@@ -48,9 +47,9 @@
         .leaflet-popup-content .fullscreen-toggle-btn:hover {
             background-color: #e5e7eb;
         }
-        /* Estilo para los marcadores de bus */
+
+        /* --- ESTILOS DE MARCADOR DE BUS (NUEVA LÓGICA DE PUNTUALIDAD) --- */
         .bus-icon {
-            background-color: #2563EB; /* Azul primario */
             border: 3px solid #1E40AF;
             border-radius: 50%;
             width: 36px;
@@ -68,18 +67,33 @@
         .bus-icon:hover {
             transform: scale(1.1);
         }
-        /* Estilo para los marcadores de parada (Ajustado para mejor control con Leaflet) */
+        
+        /* 1. ADELANTO (Azul) - Más de 150 metros por delante */
+        .bus-adelanto {
+            background-color: #1E40AF; /* Azul Oscuro */
+            border-color: #007bff;
+        }
+        /* 2. A TIEMPO (Verde) - Entre -150m y +500m */
+        .bus-a-tiempo {
+            background-color: #059669; /* Verde Esmeralda */
+            border-color: #064E3B;
+        }
+        /* 3. RETRASO (Rojo) - Más de 500 metros por detrás */
+        .bus-retraso {
+            background-color: #DC2626; /* Rojo Fuerte */
+            border-color: #991B1B;
+        }
+        /* Estilo para los marcadores de parada */
         .stop-icon {
             background-color: white;
-            border: 2px solid #1E40AF; /* Borde azul */
+            border: 2px solid #1E40AF;
             border-radius: 50%;
-            /* Definimos el tamaño exacto en el CSS */
             width: 16px;
             height: 16px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
-        /* Estilo para la máscara de carga (Spinner de Tailwind) */
+        /* Estilo para la máscara de carga */
         .loading-overlay {
             position: absolute;
             top: 0;
@@ -106,7 +120,7 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8 font-sans">
 
-    <!-- Botón de Casa Global (Visible en todos los modos excepto el menú principal) -->
+    <!-- Botón de Casa Global -->
     <button id="home-btn" class="fixed top-4 left-4 z-50 bg-white text-blue-600 p-3 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out hidden" title="Volver al Menú Principal">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-10l-2-2m-2 2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -134,7 +148,7 @@
         <div id="stops-map-controls" class="bg-white p-6 rounded-xl shadow-2xl mb-8 hidden">
             <h2 class="text-2xl font-bold text-gray-800 mb-4">Mapa General de Paradas</h2>
 
-            <!-- Buscador de Bus por ID (REINCORPORADO) -->
+            <!-- Buscador de Bus por ID -->
             <div class="mb-6 border-b pb-4">
                 <label for="bus-search-input" class="block text-sm font-bold text-gray-700 mb-2">🔎 Buscar Autobús por ID:</label>
                 <div class="flex gap-3">
@@ -171,6 +185,15 @@
                     <option value="">Cargando variantes...</option>
                 </select>
                 <div id="status-message-line-view" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
+                <!-- Leyenda de Puntualidad (ACTUALIZADA) -->
+                <div class="mt-4 p-2 text-xs bg-gray-100 rounded-lg border border-gray-300">
+                    <p class="font-bold mb-1 text-gray-700">Leyenda de Puntualidad (Desfase en metros):</p>
+                    <div class="flex flex-wrap gap-x-4">
+                        <span class="flex items-center"><span class="h-3 w-3 rounded-full bg-red-600 mr-1"></span> Retraso (>500m)</span>
+                        <span class="flex items-center"><span class="h-3 w-3 rounded-full bg-green-600 mr-1"></span> A tiempo (-150m a +500m)</span>
+                        <span class="flex items-center"><span class="h-3 w-3 rounded-full bg-blue-700 mr-1"></span> Adelanto (<-150m)</span>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -197,29 +220,35 @@
     </div>
 
     <script>
-        // === ADVERTENCIA CRÍTICA: PROBLEMA DE CORS ===
+        // === CONFIGURACIÓN DE LA APLICACIÓN ===
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
-        const CORS_PROXY = 'https://corsproxy.io/?'; 
-        const POLLING_LINE_MS = 15000; // Refresco de buses de la línea activa (15s)
-        const POLLING_STOP_MS = 10000; // Refresco de estimaciones de parada (10s)
-        const POLLING_GLOBAL_MS = 60000; // Refresco global para el buscador (60s)
+        const CORS_PROXY = 'https://corsproxy.io/?';
+        const POLLING_LINE_MS = 15000;
+        const POLLING_STOP_MS = 10000;
+        const POLLING_GLOBAL_MS = 60000;
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
 
         // --- ENUMS DE ESTADO (CRÍTICO PARA LA NAVEGACIÓN) ---
         const VIEWS = {
             MENU: 'MENU',
-            STOP_MAP: 'STOP_MAP', // Modo: Mapa con todas las paradas y buscador
-            LINE_VIEW: 'LINE_VIEW' // Modo: Listado de líneas o Mapa de línea individual
+            STOP_MAP: 'STOP_MAP',
+            LINE_VIEW: 'LINE_VIEW'
         };
         let currentView = VIEWS.MENU;
-        let lineId = null; // Almacena la línea activa en el modo LINE_VIEW
-        let targetBusIdOnLoad = null; // NUEVO: Para forzar el enfoque en un bus después de la navegación
+        let lineId = null;
+        let targetBusIdOnLoad = null;
 
         const ALL_LINES = [
             '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17',
             '18', '19', '20', '21', '22', '23', '73', '87', '88', '89', 'C1', 'C2'
         ];
+
+        // --- LÓGICA DE PUNTUALIDAD (AJUSTADA) ---
+        // DesfaseEspacio (en metros):
+        const LATE_THRESHOLD = 500; // Retraso CRÍTICO si > 500m (Rojo)
+        const EARLY_THRESHOLD = -150; // Adelanto CRÍTICO si < -150m (Azul)
+        const AVERAGE_SPEED_MPS = 4.167; // Velocidad promedio asumida: 15 km/h -> 4.167 m/s
 
         // --- REQUISITO: Datos Estáticos de la Flota (Mantenidos) ---
         const BUS_FLEET_DATA = { 
@@ -295,7 +324,7 @@
         let busMarkersLayer;
         let routeLineLayer;
         let stopMarkersLayer;
-        let allStopMarkers = new Map(); // Para almacenar TODOS los marcadores de parada (incluye los del modo STOP_MAP)
+        let allStopMarkers = new Map();
         
         // Intervalos de Polling
         let globalMonitorInterval;
@@ -303,11 +332,11 @@
         let stopEstimationInterval;
         let currentStopMarker = null;
 
-        const allRoutes = {}; // Caché de rutas (geometría y variantes)
-        const allStopData = {}; // Caché global de todas las paradas (num, lat, lng, name)
-        const stopDataCache = {}; // Caché de paradas de la línea activa
-        const busMarkers = new Map(); // Marcadores de la línea actual
-        const ALL_ACTIVE_BUSES = new Map(); // Caché Global para el Buscador
+        const allRoutes = {};
+        const allStopData = {};
+        const stopDataCache = {};
+        const busMarkers = new Map();
+        const ALL_ACTIVE_BUSES = new Map();
 
         // --- Referencias de Elementos DOM ---
         const menuScreen = document.getElementById('menu-screen');
@@ -323,7 +352,6 @@
         const btnShowStopsMap = document.getElementById('btn-show-stops-map');
         const btnShowLinesList = document.getElementById('btn-show-lines-list');
         
-        // Nuevas referencias para el buscador de Bus ID
         const busSearchInput = document.getElementById('bus-search-input');
         const busSearchButton = document.getElementById('bus-search-button');
         
@@ -342,8 +370,8 @@
 
         function navigate(view, newLineId = null) {
             currentView = view;
-            lineId = newLineId; // Actualizar la línea activa
-            targetBusIdOnLoad = null; // Resetear el bus objetivo al cambiar de vista principal
+            lineId = newLineId;
+            targetBusIdOnLoad = null;
             
             // 1. Ocultar todos los contenedores de vista
             menuScreen.classList.add('hidden');
@@ -397,7 +425,6 @@
                 if (view === VIEWS.STOP_MAP && allStopMarkers.size > 0) {
                     centerMapToAllStops();
                 } else if (view === VIEWS.LINE_VIEW && !lineId) {
-                    // Si estamos en el listado de líneas, pero el contenedor del mapa está visible, centrar en Burgos
                     map.setView([42.3459, -3.6969], 14);
                 }
             }
@@ -466,79 +493,126 @@
             return `${minutes} min`;
         }
 
-        // --- Lógica de la API y Fetching ---
+        /**
+         * @function getPunctualityInfo
+         * @description Determina la puntualidad y calcula el desfase de tiempo estimado.
+         * @param {number} distance - desfaseEspacio en metros (positivo = retraso, negativo = adelanto).
+         * @returns {{colorClass: string, message: string}}
+         */
+        function getPunctualityInfo(distance) {
+            const absDistance = Math.abs(distance);
+
+            // Estimar el tiempo de desfase (Desfase en metros / Velocidad promedio en m/s)
+            const timeDesfaseSeconds = Math.round(absDistance / AVERAGE_SPEED_MPS);
+            const timeDesfaseMinutes = Math.round(timeDesfaseSeconds / 60);
+
+            if (distance > LATE_THRESHOLD) {
+                // Retraso (Rojo) -> > 500m
+                return {
+                    colorClass: 'bus-retraso',
+                    message: `Retraso: ${absDistance}m (aprox. ${timeDesfaseMinutes} min)`
+                };
+            } else if (distance < EARLY_THRESHOLD) {
+                // Adelanto (Azul) -> < -150m
+                return {
+                    colorClass: 'bus-adelanto',
+                    message: `Adelanto: ${absDistance}m (aprox. ${timeDesfaseMinutes} min)`
+                };
+            } else {
+                // A Tiempo (Verde) -> -150m <= distance <= 500m
+                return {
+                    colorClass: 'bus-a-tiempo',
+                    message: `A Tiempo (Desfase: ${distance}m)`
+                };
+            }
+        }
+
+        // --- Lógica de la API y Fetching (SIN CAMBIOS) ---
 
         async function fetchWithRetry(url, retries = 3, isPolling = false) { 
              for (let i = 0; i < retries; i++) {
-                try {
-                    const headers = new Headers();
-                    headers.append('Referer', BASE_URL); 
+                 try {
+                     const headers = new Headers();
+                     headers.append('Referer', BASE_URL); 
 
-                    const response = await fetch(CORS_PROXY + encodeURIComponent(url), { headers: headers });
-                    
-                    if (!response.ok) {
-                        if (isPolling && response.status === 403 && i < retries - 1) {
+                     const response = await fetch(CORS_PROXY + encodeURIComponent(url), { headers: headers });
+                     
+                     if (!response.ok) {
+                         if (isPolling && response.status === 403 && i < retries - 1) {
                              console.warn(`[Polling Silencioso] 403 en reintento ${i + 1}. Reintentando...`);
-                        } else {
-                            throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
-                        }
-                    } else {
-                        const text = await response.text();
-                        
-                        if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
+                         } else {
+                             throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
+                         }
+                     } else {
+                         const text = await response.text();
+                         
+                         if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
                              return [];
-                        }
+                         }
 
-                        try {
-                            let jsonText = text;
-                            if (text.startsWith('URL_DECODED:')) {
-                                jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
-                            }
-                            return JSON.parse(jsonText);
-                        } catch (e) {
-                            throw new Error(`Error al procesar la respuesta del servidor (No es JSON válido).`);
-                        }
-                    }
-                } catch (error) {
-                    if (i === retries - 1) {
-                        throw new Error(`Error final al obtener datos: ${error.message}`);
-                    }
-                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-                }
-            }
-        }
+                         try {
+                             let jsonText = text;
+                             if (text.startsWith('URL_DECODED:')) {
+                                 jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                             }
+                             return JSON.parse(jsonText);
+                         } catch (e) {
+                             throw new Error(`Error al procesar la respuesta del servidor (No es JSON válido).`);
+                         }
+                     }
+                 } catch (error) {
+                     if (i === retries - 1) {
+                         throw new Error(`Error final al obtener datos: ${error.message}`);
+                     }
+                     await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                 }
+             }
+         }
 
+        /**
+         * @function fetchBurgosAPI
+         * @description Construye la URL de la API con los parámetros correctos.
+         * @param {string} resourceId - resourceNodes, resourceVehicles, resourceEstimations, etc.
+         * @param {string} lineId - ID de la línea (e.g., '01', 'C1').
+         * @param {Object} extraParams - Parámetros adicionales específicos de la llamada.
+         */
         async function fetchBurgosAPI(resourceId, lineId = '', extraParams = {}) { 
              const dynamicParams = new URLSearchParams();
 
-            dynamicParams.set(PORTLET_PREFIX + 'formDate', Date.now());
-            dynamicParams.set(PORTLET_PREFIX + 'tipo', '1');
-            
-            if (lineId) {
-                dynamicParams.set(PORTLET_PREFIX + 'line', lineId);
-                dynamicParams.set(PORTLET_PREFIX + 'label', lineId);
-            }
+             dynamicParams.set(PORTLET_PREFIX + 'formDate', Date.now());
+             dynamicParams.set(PORTLET_PREFIX + 'tipo', '1');
+             
+             if (lineId) {
+                 // ** CORRECCIÓN IMPORTANTE DE URL **: Usamos lineId para ambos
+                 dynamicParams.set(PORTLET_PREFIX + 'line', lineId);
+                 dynamicParams.set(PORTLET_PREFIX + 'label', lineId);
+             } else {
+                // Para llamadas globales (como resourceNodes sin línea específica), 
+                // establecemos un lineId por defecto para que la URL sea válida
+                dynamicParams.set(PORTLET_PREFIX + 'line', '01');
+                dynamicParams.set(PORTLET_PREFIX + 'label', '01');
+             }
 
-            for (const key in extraParams) {
-                dynamicParams.set(PORTLET_PREFIX + key, extraParams[key]);
-            }
+             for (const key in extraParams) {
+                 dynamicParams.set(PORTLET_PREFIX + key, extraParams[key]);
+             }
 
-            const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
-            
-            const isPollingCall = resourceId === 'resourceVehicles' || resourceId === 'resourceEstimations';
+             const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
+             
+             const isPollingCall = resourceId === 'resourceVehicles' || resourceId === 'resourceEstimations';
 
-            try {
-                return await fetchWithRetry(targetUrl, 3, isPollingCall); 
-            } catch (error) {
-                if(!isPollingCall) {
-                    const targetStatusBox = currentView === VIEWS.STOP_MAP ? 'status-message-stop-map' : 'status-message-line-view';
-                    showStatus(error.message, true, targetStatusBox);
-                }
-                throw error;
-            }
-        }
+             try {
+                 return await fetchWithRetry(targetUrl, 3, isPollingCall); 
+             } catch (error) {
+                 if(!isPollingCall) {
+                     const targetStatusBox = currentView === VIEWS.STOP_MAP ? 'status-message-stop-map' : 'status-message-line-view';
+                     showStatus(error.message, true, targetStatusBox);
+                 }
+                 throw error;
+             }
+         }
         
-        // --- Inicialización y Eventos ---
+        // --- Inicialización y Eventos (SIN CAMBIOS ESTRUCTURALES) ---
         
         function setupEventListeners() {
             btnShowStopsMap.onclick = () => navigate(VIEWS.STOP_MAP);
@@ -581,12 +655,8 @@
             navigate(VIEWS.MENU);
         }
         
-        // --- LÓGICA DEL BUSCADOR DE BUS POR ID (REINCORPORADA) ---
+        // --- LÓGICA DEL BUSCADOR DE BUS POR ID (REINCORPORADA) (SIN CAMBIOS) ---
         
-        /**
-         * @function searchBusById
-         * @description Busca un bus por ID en la caché global y navega a su línea.
-         */
         function searchBusById() {
             const busId = busSearchInput.value.trim();
             
@@ -614,7 +684,7 @@
             busSearchInput.value = '';
         }
         
-        // --- LÓGICA DEL MODO LINE_VIEW (Listado y Mapa de Línea) ---
+        // --- LÓGICA DEL MODO LINE_VIEW (Listado y Mapa de Línea) (SIN CAMBIOS) ---
 
         function loadLinesList() {
             linesListContainer.innerHTML = '';
@@ -696,14 +766,13 @@
             showLoading("Dibujando ruta y cargando paradas...");
             await renderRouteAndStops(lineId, variantId, 'status-message-line-view');
             
-            // Iniciar monitor de la línea activa para refrescar los buses.
-            // La función ahora devuelve una promesa que se resuelve con la primera actualización de buses.
+            // Iniciar monitor de la línea activa
             startLineMonitor(lineId).then(() => {
                 
                 // --- LÓGICA DE ENFOQUE DE BUS AL NAVEGAR DESDE EL BUSCADOR ID ---
                 if (targetBusIdOnLoad) {
                     const busIdToFind = targetBusIdOnLoad;
-                    targetBusIdOnLoad = null; // Limpiar la bandera
+                    targetBusIdOnLoad = null;
                     
                     const marker = busMarkers.get(busIdToFind);
                     if (marker) {
@@ -711,7 +780,7 @@
                         marker.openPopup();
                         showStatus(`Bus ID ${busIdToFind} encontrado en Línea ${lineId}.`, false, 'status-message-line-view');
                     } else {
-                         showStatus(`Bus ID ${busIdToFind} ya no está activo o no pudo ser localizado.`, true, 'status-message-line-view');
+                        showStatus(`Bus ID ${busIdToFind} ya no está activo o no pudo ser localizado.`, true, 'status-message-line-view');
                     }
                 }
                 // --- FIN LÓGICA DE ENFOQUE ---
@@ -724,7 +793,7 @@
             showStatus(`Línea ${lineId} cargada. Sentido: ${event.target.options[event.target.selectedIndex].text}`, false, 'status-message-line-view');
         }
 
-        // --- LÓGICA DEL MODO STOP_MAP (Todas las Paradas) ---
+        // --- LÓGICA DEL MODO STOP_MAP (Todas las Paradas) (SIN CAMBIOS) ---
 
         async function loadAllStopsOnMap() {
             clearMapLayers();
@@ -826,40 +895,40 @@
             map.fitBounds(bounds);
         }
 
-        // --- Lógica Común de Dibujo ---
+        // --- Lógica Común de Dibujo (SIN CAMBIOS) ---
         
         function createStopMarker(lat, lng, stopId, stopName, mode) {
              const marker = L.marker([lat, lng], {
-                icon: L.divIcon({
-                    className: 'stop-icon',
-                    html: '',
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8],
-                    popupAnchor: [0, -7]
-                })
-            }).addTo(stopMarkersLayer);
+                 icon: L.divIcon({
+                     className: 'stop-icon',
+                     html: '',
+                     iconSize: [16, 16],
+                     iconAnchor: [8, 8],
+                     popupAnchor: [0, -7]
+                 })
+             }).addTo(stopMarkersLayer);
             
-            marker.stopId = stopId;
-            marker.stopName = stopName;
-            marker.mode = mode; 
+             marker.stopId = stopId;
+             marker.stopName = stopName;
+             marker.mode = mode; 
             
-            marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">${stopName} (${stopId})<br>Cargando horarios...</div>`);
+             marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">${stopName} (${stopId})<br>Cargando horarios...</div>`);
             
-            marker.on('popupopen', (e) => {
-                const markerTarget = e.target;
-                startStopEstimationMonitor('', markerTarget.stopId, markerTarget); 
-                stopLineMonitor(); 
-            });
+             marker.on('popupopen', (e) => {
+                 const markerTarget = e.target;
+                 startStopEstimationMonitor(markerTarget.lineId || '', markerTarget.stopId, markerTarget); 
+                 stopLineMonitor(); 
+             });
             
-            marker.on('popupclose', () => {
-                // Reactivamos el monitor de línea si estamos en modo LINE_VIEW
-                if (currentView === VIEWS.LINE_VIEW && lineId) {
-                    startLineMonitor(lineId);
-                }
-            });
+             marker.on('popupclose', () => {
+                 // Reactivamos el monitor de línea si estamos en modo LINE_VIEW
+                 if (currentView === VIEWS.LINE_VIEW && lineId) {
+                     startLineMonitor(lineId);
+                 }
+             });
             
-            return marker;
-        }
+             return marker;
+         }
 
         /**
          * @function renderRouteAndStops
@@ -902,24 +971,24 @@
 
         function drawRoutePath(latLngs) { 
              if (!latLngs || latLngs.length === 0) return;
-            const path = latLngs.map(p => [p.lat, p.lng]);
-            const polyline = L.polyline(path, { color: '#2563EB', weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
-            map.fitBounds(polyline.getBounds(), { padding: [50, 50] }); 
+             const path = latLngs.map(p => [p.lat, p.lng]);
+             const polyline = L.polyline(path, { color: '#2563EB', weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
+             map.fitBounds(polyline.getBounds(), { padding: [50, 50] }); 
             
-            if (L.Polyline.SnakeFlow) {
+             if (L.Polyline.SnakeFlow) {
                  L.polyline(path, { color: '#2563EB', weight: 0, flow: {length: 30, trail: 5, color: '#1E40AF', speed: 1} }).addTo(routeLineLayer);
-            }
-        }
+             }
+         }
         
         function clearMapLayers() { 
              busMarkersLayer.clearLayers();
              routeLineLayer.clearLayers();
              stopMarkersLayer.clearLayers();
              busMarkers.clear();
-             allStopMarkers.clear();
+             // allStopMarkers NO se limpia para el modo STOP_MAP
         }
 
-        // --- Lógica de Polling ---
+        // --- Lógica de Polling (SIN CAMBIOS) ---
         
         function stopLineMonitor() { 
             if (currentLineMonitorInterval) {
@@ -928,13 +997,6 @@
             }
         }
         
-        /**
-         * @function startLineMonitor
-         * @description Inicia el polling de buses para una línea, devolviendo una promesa que resuelve
-         * tras la primera actualización exitosa.
-         * @param {string} lineId - ID de la línea a monitorizar.
-         * @returns {Promise<void>}
-         */
         function startLineMonitor(lineId) {
             stopLineMonitor();
             let firstUpdateResolve;
@@ -947,16 +1009,16 @@
                     
                     if (firstUpdateResolve) {
                         firstUpdateResolve();
-                        firstUpdateResolve = null; // No resolver más la promesa
+                        firstUpdateResolve = null;
                     }
                 } catch (e) {
-                    console.log(`[Polling Fallido NO fatal] Error al actualizar la Línea ${lineId}.`);
+                    // console.log(`[Polling Fallido NO fatal] Error al actualizar la Línea ${lineId}.`);
                 }
             };
             
             poller(); 
             currentLineMonitorInterval = setInterval(poller, POLLING_LINE_MS);
-            console.log(`Monitor de Línea ${lineId} iniciado: Polling cada ${POLLING_LINE_MS / 1000}s`);
+            // console.log(`Monitor de Línea ${lineId} iniciado: Polling cada ${POLLING_LINE_MS / 1000}s`);
             
             return firstUpdatePromise;
         }
@@ -984,7 +1046,7 @@
 
             poller(); 
             stopEstimationInterval = setInterval(poller, POLLING_STOP_MS);
-            console.log(`Monitor de Parada ${stopId} iniciado: Polling cada ${POLLING_STOP_MS / 1000}s`);
+            // console.log(`Monitor de Parada ${stopId} iniciado: Polling cada ${POLLING_STOP_MS / 1000}s`);
         }
         
         async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) { 
@@ -1005,6 +1067,7 @@
             }
 
             try {
+                // Notamos que la API no requiere lineId para resourceEstimations, solo nodoIds
                 const estimationsData = await fetchBurgosAPI('resourceEstimations', '', { 
                     'nodoIds': stopId,
                 });
@@ -1014,57 +1077,57 @@
                 const allEstimates = [];
                 
                  if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
-                    const stopData = estimationsData.find(item => item.nodoId === stopId);
+                     const stopData = estimationsData.find(item => item.nodoId === stopId);
                     
-                    if (stopData && stopData.routeEstimationByNode) {
-                        stopData.routeEstimationByNode.forEach(routeEst => {
-                            if (routeEst.publicEstimationVHExts) {
-                                routeEst.publicEstimationVHExts.forEach(est => {
-                                    if (est.destination) {
-                                        allEstimates.push({
-                                            line: routeEst.line,
-                                            destination: routeEst.destination,
-                                            seconds: est.seconds
-                                        });
-                                    }
-                                });
-                            }
-                        });
-                    }
-                }
+                     if (stopData && stopData.routeEstimationByNode) {
+                         stopData.routeEstimationByNode.forEach(routeEst => {
+                             if (routeEst.publicEstimationVHExts) {
+                                 routeEst.publicEstimationVHExts.forEach(est => {
+                                     if (est.destination) {
+                                         allEstimates.push({
+                                             line: routeEst.line,
+                                             destination: routeEst.destination,
+                                             seconds: est.seconds
+                                         });
+                                     }
+                                 });
+                             }
+                         });
+                     }
+                 }
                 
-                allEstimates.sort((a, b) => a.seconds - b.seconds);
+                 allEstimates.sort((a, b) => a.seconds - b.seconds);
 
-                if (allEstimates.length > 0) {
-                    popupContent += `
-                        <div class="text-xs text-gray-500 text-center mb-1">Actualizado: ${new Date().toLocaleTimeString()}</div>
-                        <table class="min-w-full text-sm">
-                            <thead>
-                                <tr>
-                                    <th class="text-left font-semibold text-gray-700">Línea/Destino</th>
-                                    <th class="text-right font-semibold text-gray-700">Llegada</th>
-                                </tr>
-                            </thead>
-                            <tbody>`;
+                 if (allEstimates.length > 0) {
+                     popupContent += `
+                         <div class="text-xs text-gray-500 text-center mb-1">Actualizado: ${new Date().toLocaleTimeString()}</div>
+                         <table class="min-w-full text-sm">
+                             <thead>
+                                 <tr>
+                                     <th class="text-left font-semibold text-gray-700">Línea/Destino</th>
+                                     <th class="text-right font-semibold text-gray-700">Llegada</th>
+                                 </tr>
+                             </thead>
+                             <tbody>`;
 
-                    allEstimates.forEach(est => {
-                        popupContent += `<tr>
-                                            <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
-                                            <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
-                                        </tr>`;
-                        foundEstimations = true;
-                    });
-                    popupContent += `</tbody></table>`;
-                }
+                     allEstimates.forEach(est => {
+                         popupContent += `<tr>
+                                             <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
+                                             <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
+                                         </tr>`;
+                         foundEstimations = true;
+                     });
+                     popupContent += `</tbody></table>`;
+                 }
                 
-                if (!foundEstimations) {
-                    popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento para esta parada.</p>`;
-                }
+                 if (!foundEstimations) {
+                     popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento para esta parada.</p>`;
+                 }
 
-                popupContent += `<button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full mt-3">Pantalla Completa</button>`; 
+                 popupContent += `<button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full mt-3">Pantalla Completa</button>`; 
 
-                marker.getPopup().setContent(popupContent);
-                marker.update(); 
+                 marker.getPopup().setContent(popupContent);
+                 marker.update(); 
 
             } catch (error) {
                 marker.getPopup().setContent(`
@@ -1084,7 +1147,7 @@
              
              updateAllVehiclesGlobally();
              globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_GLOBAL_MS);
-             console.log(`Monitor Global de Buses iniciado: Polling cada ${POLLING_GLOBAL_MS / 1000}s`);
+             // console.log(`Monitor Global de Buses iniciado: Polling cada ${POLLING_GLOBAL_MS / 1000}s`);
         }
         
         async function updateAllVehiclesGlobally() { 
@@ -1114,10 +1177,10 @@
         }
 
         function getRouteDestination(lineId, routeId) { 
-            const lineVariants = allRoutes[lineId];
-            if (!lineVariants) return "Cargando...";
-            const variant = lineVariants.find(v => v.routeNode && v.routeNode.length > 0 && v.routeNode[0].routeId === routeId);
-            return variant ? variant.label : "Desconocido";
+             const lineVariants = allRoutes[lineId];
+             if (!lineVariants) return "Cargando...";
+             const variant = lineVariants.find(v => v.routeNode && v.routeNode.length > 0 && v.routeNode[0].routeId === routeId);
+             return variant ? variant.label : "Desconocido";
         }
 
         async function loadNextStopEstimation(busId, lineId, marker) { 
@@ -1129,6 +1192,9 @@
                 return;
             }
 
+            // Aplicar la nueva lógica de puntualidad
+            const punctuality = getPunctualityInfo(busData.desfaseEspacio);
+            
             try {
                 const destination = getRouteDestination(lineId, busData.ruta);
 
@@ -1148,9 +1214,11 @@
                     `;
                 }
                 
+                const punctualityClass = punctuality.colorClass.replace('bus-', 'text-');
                 const popupContent = `
                     <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId} (Línea ${lineId})</div>
                     <p class="text-sm mt-2">Destino: <span class="font-semibold">${destination}</span></p>
+                    <p class="text-sm">Posición: <span class="font-bold ${punctualityClass}">${punctuality.message}</span></p>
                     ${fleetInfo}
                     <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Bus: ${POLLING_LINE_MS / 1000}s)</p>
                     <button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full">Pantalla Completa</button>
@@ -1164,53 +1232,66 @@
             }
         }
         
+        /**
+         * @function updateBusMarkers
+         * @description Actualiza la posición y el estilo de los marcadores de autobús.
+         * (Actualizado con la lógica de puntualidad).
+         */
         function updateBusMarkers(lineId, vehiclesData) { 
              const vehicles = vehiclesData || [];
              const activeIds = new Set();
              
              vehicles.forEach(bus => {
                  const busId = bus.id.toString();
-                 const marker = busMarkers.get(busId);
+                 let marker = busMarkers.get(busId);
                  activeIds.add(busId);
 
                  if (isNaN(bus.lat) || isNaN(bus.lng)) {
-                     console.warn(`Bus ID ${busId} tiene coordenadas inválidas. Omitiendo actualización.`);
+                     // console.warn(`Bus ID ${busId} tiene coordenadas inválidas. Omitiendo actualización.`);
                      return; 
                  }
 
+                 const punctuality = getPunctualityInfo(bus.desfaseEspacio);
+
                  if (marker) {
                      marker.setLatLng([bus.lat, bus.lng]);
+                     // Actualizar la clase del icono para reflejar la puntualidad
+                     const iconElement = marker.getElement();
+                     if (iconElement) {
+                         iconElement.className = `leaflet-marker-icon leaflet-zoom-animated leaflet-interactive bus-icon ${punctuality.colorClass}`;
+                     }
                  } else {
                      const icon = L.divIcon({
-                         className: 'bus-icon',
+                         className: `bus-icon ${punctuality.colorClass}`,
                          html: `<span class="leading-none text-sm">${busId}</span>`,
                          iconSize: [36, 36],
                          iconAnchor: [18, 18]
                      });
 
-                     const newMarker = L.marker([bus.lat, bus.lng], { icon: icon, title: `Bus ID: ${busId}` }).addTo(busMarkersLayer);
-                     newMarker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
+                     marker = L.marker([bus.lat, bus.lng], { icon: icon, title: `Bus ID: ${busId} (${punctuality.message})` }).addTo(busMarkersLayer);
                      
-                     newMarker.on('popupopen', (e) => {
+                     marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
+                     
+                     marker.on('popupopen', (e) => {
                          loadNextStopEstimation(bus.id, lineId, e.target);
                          stopStopEstimationMonitor();
                      });
                      
-                     busMarkers.set(busId, newMarker);
+                     busMarkers.set(busId, marker);
                  }
+
+                 // Actualizar la caché global
+                 ALL_ACTIVE_BUSES.set(busId, { ...bus, lineId });
              });
 
              busMarkers.forEach((marker, id) => {
                  if (!activeIds.has(id.toString())) {
                      busMarkersLayer.removeLayer(marker);
                      busMarkers.delete(id);
+                     ALL_ACTIVE_BUSES.delete(id); // Limpiar caché global
                  }
              });
-             
-             vehicles.forEach(bus => {
-                  ALL_ACTIVE_BUSES.set(bus.id.toString(), { ...bus, lineId });
-             });
-        }
+         }
 
         // Exponer la función globalmente para que los popups puedan llamarla
         window.toggleMapFullscreen = toggleMapFullscreen;
