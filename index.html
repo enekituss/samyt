@@ -11,13 +11,19 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polyline-snake-flow/0.0.1/L.Polyline.SnakeFlow.min.js"></script>
 
     <style>
+        /* --- CONFIGURACIÓN DE FUENTE Y COLORES DE TAILWIND --- */
+        html { font-family: 'Inter', sans-serif; }
+        .bg-gradient-bus { 
+            background-image: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); 
+        }
+
         /* --- ESTILOS DE MAPA Y CONTENEDOR --- */
         #map {
-            height: 55vh;
+            height: 60vh;
             min-height: 400px;
             width: 100%;
-            border-radius: 0.75rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-radius: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             transition: height 0.4s ease, border-radius 0.4s ease;
         }
         #map.map-fullscreen {
@@ -31,37 +37,25 @@
             border-radius: 0;
             z-index: 999;
         }
-        /* Estilo para el botón del popup de Leaflet (Para pantalla completa) */
-        .leaflet-popup-content .fullscreen-toggle-btn {
-            background-color: #f3f4f6;
-            border: 1px solid #d1d5db;
-            padding: 4px 8px;
-            border-radius: 0.375rem;
-            cursor: pointer;
-            margin-top: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            color: #374151;
-            transition: background-color 0.2s;
-        }
-        .leaflet-popup-content .fullscreen-toggle-btn:hover {
-            background-color: #e5e7eb;
-        }
+        
+        /* Oculta los popups estándar de Leaflet, ya que usamos un modal */
+        .leaflet-popup-pane { display: none; }
 
         /* --- ESTILOS DE MARCADOR DE BUS (NUEVA LÓGICA DE PUNTUALIDAD) --- */
         .bus-icon {
-            border: 3px solid #1E40AF;
+            /* Diseño base mejorado */
+            border: 3px solid white;
             border-radius: 50%;
-            width: 36px;
-            height: 36px;
+            width: 40px;
+            height: 40px;
             text-align: center;
-            line-height: 30px;
+            line-height: 34px;
             color: white;
             font-weight: bold;
-            font-size: 15px;
+            font-size: 16px;
             cursor: pointer;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
-            transition: all 0.3s ease-out;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Efecto pop */
             transform: scale(0.9);
         }
         .bus-icon:hover {
@@ -71,26 +65,45 @@
         /* 1. ADELANTO (Azul) - Más de 150 metros por delante */
         .bus-adelanto {
             background-color: #1E40AF; /* Azul Oscuro */
-            border-color: #007bff;
+            border-color: #60a5fa;
         }
         /* 2. A TIEMPO (Verde) - Entre -150m y +500m */
         .bus-a-tiempo {
             background-color: #059669; /* Verde Esmeralda */
-            border-color: #064E3B;
+            border-color: #6ee7b7;
         }
         /* 3. RETRASO (Rojo) - Más de 500 metros por detrás */
         .bus-retraso {
             background-color: #DC2626; /* Rojo Fuerte */
-            border-color: #991B1B;
+            border-color: #fca5a5;
         }
         /* Estilo para los marcadores de parada */
         .stop-icon {
             background-color: white;
-            border: 2px solid #1E40AF;
+            border: 2px solid #10b981; /* Verde más sutil */
             border-radius: 50%;
             width: 16px;
             height: 16px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        .stop-icon:hover {
+            transform: scale(1.5);
+        }
+        /* Marcador de ubicación del usuario */
+        .user-location-icon {
+            background-color: #1d4ed8;
+            border: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 0 5px rgba(30, 94, 239, 0.7);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(30, 94, 239, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(30, 94, 239, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(30, 94, 239, 0); }
         }
 
         /* Estilo para la máscara de carga */
@@ -100,13 +113,13 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            border-radius: 0.75rem;
+            border-radius: 1rem;
             transition: opacity 0.3s ease;
         }
         .animate-spin {
@@ -116,56 +129,132 @@
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
+        
+        /* Estilos del Modal (Ventana Emergente de Paradas) */
+        #stop-details-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 5000;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end; /* Para que aparezca desde abajo en móvil */
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        #stop-details-modal.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        #modal-content {
+            background-color: white;
+            width: 100%;
+            max-width: 500px;
+            min-height: 250px;
+            border-radius: 1rem 1rem 0 0; /* Bordes redondeados solo arriba */
+            padding: 1.5rem;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            max-height: 90vh; /* Limitar altura en móvil */
+            overflow-y: auto;
+        }
+        #stop-details-modal.open #modal-content {
+            transform: translateY(0);
+        }
+        @media (min-width: 640px) {
+            #stop-details-modal {
+                align-items: center; /* Centrar en escritorio */
+            }
+            #modal-content {
+                border-radius: 1rem;
+            }
+        }
+        /* Estilo para resultados de búsqueda (stop-search-results) */
+        #stop-search-results, #bus-search-results-calca, #bus-search-results-matricula {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-4 sm:p-8 font-sans">
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8 font-sans">
 
-    <!-- Botón de Casa Global -->
-    <button id="home-btn" class="fixed top-4 left-4 z-50 bg-white text-blue-600 p-3 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out hidden" title="Volver al Menú Principal">
+    <!-- Botón de Casa Global (7) -->
+    <button id="home-btn" class="fixed top-4 left-4 z-50 bg-white text-blue-600 p-3 rounded-full shadow-lg border border-gray-200 hover:bg-gray-100 transition duration-150 ease-in-out hidden" title="Volver al Menú Principal">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-10l-2-2m-2 2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
     </button>
     
     <div id="app-container" class="max-w-7xl mx-auto">
-        <header class="text-center mb-8">
-            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 border-b-2 border-blue-500 pb-2">🚍 Bus Burgos</h1>
-            <p id="header-subtitle" class="text-gray-600 mt-2">Localización de vehículos y horarios de parada en toda la red.</p>
+        <header class="text-center mb-8 bg-white p-4 rounded-xl shadow-md">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-900 border-b-2 border-blue-500 pb-2 inline-block">
+                <span class="text-blue-600">🚍</span> Bus Burgos
+            </h1>
+            <p id="header-subtitle" class="text-gray-600 mt-2 font-medium">Localización de vehículos y horarios de parada en toda la red.</p>
         </header>
 
-        <!-- PANTALLA PRINCIPAL: Menú de Selección -->
+        <!-- PANTALLA PRINCIPAL: Menú de Selección (1) -->
         <div id="menu-screen" class="bg-white p-6 rounded-xl shadow-2xl mb-8 flex flex-col items-center justify-center space-y-6" style="min-height: 400px;">
-            <h2 class="text-2xl font-bold text-gray-800">Elige una opción</h2>
-            <button id="btn-show-stops-map" class="w-full sm:w-80 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl">
+            <h2 class="text-2xl font-bold text-gray-800">¿Qué quieres consultar hoy?</h2>
+            
+            <button id="btn-show-stops-map" class="w-full sm:w-80 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 📍 Paradas Bus (Buscador)
             </button>
-            <button id="btn-show-lines-list" class="w-full sm:w-80 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl">
+            <button id="btn-show-lines-list" class="w-full sm:w-80 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 🗺️ Líneas Bus (Rutas y Buses en Vivo)
             </button>
+            <!-- Nuevo Botón de Búsqueda de Bus por Flota (2) -->
+            <button id="btn-show-bus-search" class="w-full sm:w-80 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
+                🔍 Buscar Bus por Flota (Calca/Matrícula)
+            </button>
         </div>
+
+        <!-- VISTA DE BÚSQUEDA DE BUS POR FLOTA (2) -->
+        <div id="bus-search-controls" class="bg-white p-6 rounded-xl shadow-2xl mb-8 hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">🔎 Buscar Bus por Calca o Matrícula</h2>
+
+            <div class="space-y-6">
+                <!-- Buscador por Calca (ID de flota) -->
+                <div>
+                    <label for="bus-search-calca" class="block text-sm font-bold text-gray-700 mb-2">ID de Calca:</label>
+                    <input type="text" id="bus-search-calca" placeholder="Ej: 134" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
+                    <div id="bus-search-results-calca" class="mt-2 hidden"></div>
+                </div>
+
+                <!-- Buscador por Matrícula -->
+                <div>
+                    <label for="bus-search-matricula" class="block text-sm font-bold text-gray-700 mb-2">Matrícula:</label>
+                    <input type="text" id="bus-search-matricula" placeholder="Ej: 126585 DVG" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
+                    <div id="bus-search-results-matricula" class="mt-2 hidden"></div>
+                </div>
+            </div>
+            
+            <div id="status-message-bus-search" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
+        </div>
+
 
         <!-- VISTA DE MAPA GENERAL DE PARADAS (Controles del modo STOP_MAP) -->
         <div id="stops-map-controls" class="bg-white p-6 rounded-xl shadow-2xl mb-8 hidden">
             <h2 class="text-2xl font-bold text-gray-800 mb-4">Mapa General de Paradas</h2>
 
-            <!-- Buscador de Bus por ID -->
-            <div class="mb-6 border-b pb-4">
-                <label for="bus-search-input" class="block text-sm font-bold text-gray-700 mb-2">🔎 Buscar Autobús por ID:</label>
-                <div class="flex gap-3">
-                    <input type="text" id="bus-search-input" placeholder="Ej: 152" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
-                    <button id="bus-search-button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-150 ease-in-out">Buscar</button>
-                </div>
-            </div>
-
             <!-- Buscador de Paradas -->
             <div class="mb-6 border-b pb-4">
                 <label for="stop-search-input" class="block text-sm font-bold text-gray-700 mb-2">📍 Buscar Parada por ID/Nombre:</label>
                 <input type="text" id="stop-search-input" placeholder="Ej: 539 o Plaza de España" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
-                <div id="stop-search-results" class="mt-2 max-h-40 overflow-y-auto bg-gray-50 border border-gray-200 rounded-lg">
+                <div id="stop-search-results" class="mt-2">
                     <!-- Resultados de la búsqueda se insertarán aquí -->
                 </div>
             </div>
-
+            
             <div id="status-message-stop-map" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
         </div>
 
@@ -186,7 +275,7 @@
                 </select>
                 <div id="status-message-line-view" class="mt-4 text-sm font-medium p-3 rounded-lg hidden text-center"></div>
                 <!-- Leyenda de Puntualidad (ACTUALIZADA) -->
-                <div class="mt-4 p-2 text-xs bg-gray-100 rounded-lg border border-gray-300">
+                <div class="mt-4 p-3 text-xs bg-gray-100 rounded-xl border border-gray-300 shadow-inner">
                     <p class="font-bold mb-1 text-gray-700">Leyenda de Puntualidad (Desfase en metros):</p>
                     <div class="flex flex-wrap gap-x-4">
                         <span class="flex items-center"><span class="h-3 w-3 rounded-full bg-red-600 mr-1"></span> Retraso (>500m)</span>
@@ -198,11 +287,11 @@
 
         </div>
 
-        <!-- Contenedor del Mapa (Común a STOP_MAP y LINE_VIEW) -->
+        <!-- Contenedor del Mapa (Común a todas las vistas con mapa) -->
         <div id="map-container-wrapper" class="relative hidden">
-            <!-- Botón de Pantalla Completa para el Mapa -->
-            <button id="fullscreen-btn" class="absolute top-2 right-2 z-[1001] bg-white text-gray-700 p-2 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out" title="Pantalla Completa">
-                <!-- Icono por defecto (Expandir) -->
+            <!-- Botón de Pantalla Completa para el Mapa (5) -->
+            <button id="fullscreen-btn" class="absolute top-4 right-4 z-[1001] bg-white text-gray-700 p-2 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out" title="Pantalla Completa">
+                <!-- Icono de Expandir/Cerrar que cambia dinámicamente -->
                 <svg id="fullscreen-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path id="fullscreen-path" stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 4l-5-5" />
                 </svg>
@@ -219,21 +308,39 @@
         </div>
     </div>
 
+    <!-- MODAL DINÁMICO DE DETALLES DE PARADA (3) -->
+    <div id="stop-details-modal" class="hidden" role="dialog" aria-modal="true">
+        <div id="modal-content" class="relative">
+            <!-- Botón de Cerrar Modal -->
+            <button id="modal-close-btn" class="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition" title="Cerrar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <div id="modal-body">
+                <!-- Contenido dinámico (horarios, nombre, etc.) se inserta aquí -->
+                <div class="text-center py-8 text-gray-500">Cargando datos...</div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // === CONFIGURACIÓN DE LA APLICACIÓN ===
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
         const CORS_PROXY = 'https://corsproxy.io/?';
         const POLLING_LINE_MS = 15000;
         const POLLING_STOP_MS = 10000;
-        const POLLING_GLOBAL_MS = 60000;
+        const POLLING_GLOBAL_MS = 60000; // Intervalo para actualizar la lista global de buses activos
+        const POLLING_USER_LOCATION_MS = 10000; // Intervalo para actualizar la ubicación del usuario (si está activada)
         const PORTLET_PREFIX = '_as_asac_isaenext_IsaenextWebPortlet_';
         const BASE_PARAMS = 'p_p_id=as_asac_isaenext_IsaenextWebPortlet&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage';
 
-        // --- ENUMS DE ESTADO (CRÍTICO PARA LA NAVEGACIÓN) ---
+        // --- ENUMS DE ESTADO (CRÍTICO PARA LA NAVEGACIÓN - 6) ---
         const VIEWS = {
             MENU: 'MENU',
             STOP_MAP: 'STOP_MAP',
-            LINE_VIEW: 'LINE_VIEW'
+            LINE_VIEW: 'LINE_VIEW',
+            BUS_SEARCH: 'BUS_SEARCH' // Nueva vista (2)
         };
         let currentView = VIEWS.MENU;
         let lineId = null;
@@ -244,11 +351,44 @@
             '18', '19', '20', '21', '22', '23', '73', '87', '88', '89', 'C1', 'C2'
         ];
 
+        // --- Mapeo de Colores de Línea (Actualizado con las imágenes - 4) ---
+        const LINE_COLORS = {
+            '01': '#D62227', // Rojo (de la imagen 1.png)
+            '02': '#EC9A1D', // Naranja/Dorado (de la imagen 2.png)
+            '03': '#8CB93F', // Verde claro (de la imagen 3.png)
+            '04': '#707070', // Gris oscuro (de la imagen 4.png)
+            '05': '#A987BB', // Morado claro (de la imagen 5.png)
+            '06': '#9A4A87', // Morado oscuro (de la imagen 6.png)
+            '07': '#6840B0', // Púrpura (de la imagen 7.png)
+            '08': '#2D937B', // Turquesa/Verde Mar (de la imagen 8.png)
+            '09': '#46C6E4', // Azul Cian (de la imagen 9.png)
+            '10': '#5755A4', // Azul Púrpura (de la imagen 10.png)
+            '11': '#EB5263', // Rosa salmón (de la imagen 11.png)
+            '12': '#2D937B', // Turquesa/Verde Mar (de la imagen 12.png) - igual que 08
+            '13': '#0097D9', // Azul brillante (de la imagen 13.png)
+            '14': '#2D937B', // Turquesa/Verde Mar (de la imagen 14.png) - igual que 08/12
+            '15': '#0097D9', // Azul brillante (de la imagen 15.png) - igual que 13
+            '16': '#70593B', // Marrón (de la imagen 16.png)
+            '17': '#8CB93F', // Verde claro (de la imagen 17.png) - igual que 03
+            '18': '#EB5263', // Rosa salmón (de la imagen 18.png) - igual que 11
+            '19': '#2D937B', // Turquesa/Verde Mar (de la imagen 19.png) - igual que 08/12/14
+            '20': '#8CB93F', // Verde claro (de la imagen 20.png) - igual que 03/17
+            '21': '#318F4E', // Verde oscuro (de la imagen 21.png)
+            '22': '#EC9A1D', // Naranja/Dorado (de la imagen 22.png) - igual que 02 y C1/C2
+            '23': '#318F4E', // Verde oscuro (de la imagen 23.png) - igual que 21
+            // Las líneas 73, 87, 88, 89 (Búhos y especial)
+            '73': '#707070', // Usamos el gris de la línea 04 como proxy para las líneas especiales no mapeadas
+            '87': '#707070', // Gris oscuro (de la imagen 87.png - Búho)
+            '88': '#707070', // Gris oscuro (de la imagen 88.png - Búho)
+            '89': '#C7A762', // Dorado (de la imagen 89.png - especial)
+            'C1': '#EC9A1D', // Naranja/Dorado (de la imagen C1 C2.png) - igual que 02/22
+            'C2': '#EC9A1D', // Naranja/Dorado (de la imagen C1 C2.png) - igual que 02/22
+        };
+
         // --- LÓGICA DE PUNTUALIDAD (AJUSTADA) ---
-        // DesfaseEspacio (en metros):
         const LATE_THRESHOLD = 500; // Retraso CRÍTICO si > 500m (Rojo)
         const EARLY_THRESHOLD = -150; // Adelanto CRÍTICO si < -150m (Azul)
-        const AVERAGE_SPEED_MPS = 4.167; // Velocidad promedio asumida: 15 km/h -> 4.167 m/s
+        const AVERAGE_SPEED_MPS = 4.167; 
 
         // --- REQUISITO: Datos Estáticos de la Flota (Mantenidos) ---
         const BUS_FLEET_DATA = { 
@@ -324,14 +464,15 @@
         let busMarkersLayer;
         let routeLineLayer;
         let stopMarkersLayer;
+        let userLocationMarker; // Marcador de ubicación del usuario (3)
+        let userLocationWatchId = null; // ID del monitor de ubicación (3)
         let allStopMarkers = new Map();
         
         // Intervalos de Polling
         let globalMonitorInterval;
         let currentLineMonitorInterval;
         let stopEstimationInterval;
-        let currentStopMarker = null;
-
+        
         const allRoutes = {};
         const allStopData = {};
         const stopDataCache = {};
@@ -342,33 +483,85 @@
         const menuScreen = document.getElementById('menu-screen');
         const stopsMapControls = document.getElementById('stops-map-controls');
         const lineViewControls = document.getElementById('line-view-controls');
+        const busSearchControls = document.getElementById('bus-search-controls'); // Nueva referencia (2)
         const mapContainerWrapper = document.getElementById('map-container-wrapper');
         const homeBtn = document.getElementById('home-btn');
         const headerSubtitle = document.getElementById('header-subtitle');
         const lineViewTitle = document.getElementById('line-view-title');
         const linesListContainer = document.getElementById('lines-list-container');
         const activeLineControls = document.getElementById('active-line-controls');
+        const stopDetailsModal = document.getElementById('stop-details-modal'); // Nueva referencia (3)
+        const modalContent = document.getElementById('modal-content');
+        const modalBody = document.getElementById('modal-body');
 
         const btnShowStopsMap = document.getElementById('btn-show-stops-map');
         const btnShowLinesList = document.getElementById('btn-show-lines-list');
-        
-        const busSearchInput = document.getElementById('bus-search-input');
-        const busSearchButton = document.getElementById('bus-search-button');
+        const btnShowBusSearch = document.getElementById('btn-show-bus-search'); // Nueva referencia (2)
         
         const stopSearchInput = document.getElementById('stop-search-input');
         const stopSearchResults = document.getElementById('stop-search-results');
         
         const routeVariantSelectLine = document.getElementById('route-variant-select-line'); 
         
+        const busSearchCalca = document.getElementById('bus-search-calca'); // Nuevas referencias (2)
+        const busSearchResultsCalca = document.getElementById('bus-search-results-calca');
+        const busSearchMatricula = document.getElementById('bus-search-matricula');
+        const busSearchResultsMatricula = document.getElementById('bus-search-results-matricula');
+        
         const loadingOverlay = document.getElementById('loading-overlay');
         const fullscreenBtn = document.getElementById('fullscreen-btn');
         const mapContainer = document.getElementById('map');
         const fullscreenIconPath = document.getElementById('fullscreen-path');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
 
+        // --- Funciones de Navegación y Estado (6) ---
 
-        // --- Funciones de Navegación y Estado ---
+        /**
+         * @function updateURL
+         * @description Actualiza el estado del navegador para persistencia.
+         */
+        function updateURL() {
+            const state = { view: currentView, lineId: lineId };
+            
+            // 1. Crear la cadena de búsqueda relativa (?view=X&line=Y)
+            const params = new URLSearchParams();
+            params.set('view', currentView);
+            if (lineId) {
+                params.set('line', lineId);
+            }
+            const searchString = '?' + params.toString();
 
-        function navigate(view, newLineId = null) {
+            // 2. Usar history.pushState con la cadena de búsqueda relativa.
+            // Esto evita el 'SecurityError' al no intentar modificar la URL base (blob:)
+            // mientras mantiene la funcionalidad de historial y estado interno (popstate).
+            window.history.pushState(state, '', searchString);
+        }
+
+        /**
+         * @function restoreStateFromURL
+         * @description Restaura el estado al cargar o al usar el botón de atrás/adelante.
+         */
+        function restoreStateFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            const view = params.get('view') || VIEWS.MENU;
+            const line = params.get('line');
+            
+            // Si hay un estado válido en la URL, navegamos.
+            if (view !== VIEWS.MENU || line) {
+                navigate(view, line, false); // El tercer parámetro indica que NO actualice la URL
+            } else {
+                navigate(VIEWS.MENU, null, false);
+            }
+        }
+        
+        /**
+         * @function navigate
+         * @description Controla el cambio de vistas y el estado global.
+         * @param {string} view - La vista a la que navegar (VIEWS.MENU, VIEWS.STOP_MAP, etc.)
+         * @param {string|null} newLineId - ID de la línea (si aplica).
+         * @param {boolean} updateHistory - Si debe actualizar el historial del navegador.
+         */
+        function navigate(view, newLineId = null, updateHistory = true) {
             currentView = view;
             lineId = newLineId;
             targetBusIdOnLoad = null;
@@ -377,6 +570,7 @@
             menuScreen.classList.add('hidden');
             stopsMapControls.classList.add('hidden');
             lineViewControls.classList.add('hidden');
+            busSearchControls.classList.add('hidden');
             mapContainerWrapper.classList.add('hidden');
             homeBtn.classList.add('hidden');
             
@@ -384,18 +578,21 @@
             stopLineMonitor();
             stopStopEstimationMonitor();
             clearMapLayers(); 
+            hideModal();
             
             // 3. Activar la vista solicitada
             if (view === VIEWS.MENU) {
                 menuScreen.classList.remove('hidden');
                 headerSubtitle.textContent = 'Localización de vehículos y horarios de parada en toda la red.';
+                stopUserLocationMonitor(); // Detener la geolocalización en el menú
             } else if (view === VIEWS.STOP_MAP) {
                 stopsMapControls.classList.remove('hidden');
                 mapContainerWrapper.classList.remove('hidden');
                 homeBtn.classList.remove('hidden');
-                headerSubtitle.textContent = 'Todas las paradas activas con buscador.';
+                headerSubtitle.textContent = 'Todas las paradas activas con buscador. Ubicación en vivo.';
                 
                 loadAllStopsOnMap();
+                startUserLocationMonitor(); // Iniciar la geolocalización
                 
             } else if (view === VIEWS.LINE_VIEW) {
                 lineViewControls.classList.remove('hidden');
@@ -409,6 +606,7 @@
                     lineViewTitle.textContent = `Línea ${lineId} en Vivo`;
                     headerSubtitle.textContent = `Ruta, paradas y buses en tiempo real.`;
                     loadRouteVariants(lineId);
+                    startUserLocationMonitor();
                 } else {
                     // Vista de Listado de Líneas
                     linesListContainer.classList.remove('hidden');
@@ -416,10 +614,16 @@
                     lineViewTitle.textContent = `Líneas Bus: Listado`;
                     headerSubtitle.textContent = `Selecciona una línea para ver su ruta y buses.`;
                     loadLinesList();
+                    stopUserLocationMonitor();
                 }
+            } else if (view === VIEWS.BUS_SEARCH) { // Nueva vista de Buscador por Flota (2)
+                busSearchControls.classList.remove('hidden');
+                homeBtn.classList.remove('hidden');
+                headerSubtitle.textContent = 'Encuentra un bus por su ID de flota (Calca) o Matrícula.';
+                stopUserLocationMonitor();
             }
             
-            // Es CRÍTICO llamar a invalidateSize después de hacer visible el mapa
+            // 4. Es CRÍTICO llamar a invalidateSize después de hacer visible el mapa
             if (mapContainerWrapper.classList.contains('hidden') === false) {
                 map.invalidateSize();
                 if (view === VIEWS.STOP_MAP && allStopMarkers.size > 0) {
@@ -428,12 +632,77 @@
                     map.setView([42.3459, -3.6969], 14);
                 }
             }
+            
+            // 5. Actualizar URL si se debe
+            if (updateHistory) {
+                updateURL();
+            }
         }
         
         function goHome() {
             navigate(VIEWS.MENU);
         }
+        
+        // --- Lógica de Geolocalización de Usuario (3) ---
+        
+        function startUserLocationMonitor() {
+            if (!navigator.geolocation) {
+                console.warn("Geolocalización no soportada por el navegador.");
+                return;
+            }
+            
+            if (userLocationWatchId) return; // Ya está corriendo
 
+            const success = (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const latlng = [lat, lng];
+
+                if (userLocationMarker) {
+                    userLocationMarker.setLatLng(latlng);
+                } else {
+                    const icon = L.divIcon({
+                        className: 'user-location-icon',
+                        html: '',
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    });
+                    userLocationMarker = L.marker(latlng, { icon: icon }).addTo(map);
+                }
+                
+                // Mover el mapa al usuario la primera vez o si está muy lejos
+                if (!map.getBounds().contains(latlng)) {
+                     map.setView(latlng, map.getZoom() < 15 ? 15 : map.getZoom());
+                }
+            };
+
+            const error = (err) => {
+                // No es un error crítico, solo advertimos en consola.
+                console.warn(`Error de geolocalización (${err.code}): ${err.message}`);
+                stopUserLocationMonitor();
+            };
+
+            // Iniciar el monitor
+            userLocationWatchId = navigator.geolocation.watchPosition(success, error, {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 5000
+            });
+            
+            console.log("Monitor de ubicación iniciado.");
+        }
+
+        function stopUserLocationMonitor() {
+            if (userLocationWatchId !== null) {
+                navigator.geolocation.clearWatch(userLocationWatchId);
+                userLocationWatchId = null;
+                console.log("Monitor de ubicación detenido.");
+            }
+            if (userLocationMarker) {
+                map.removeLayer(userLocationMarker);
+                userLocationMarker = null;
+            }
+        }
 
         // --- Funciones de Utilidad y UI ---
 
@@ -444,16 +713,42 @@
             if (isFullscreen) {
                 appContainer.style.display = 'none';
                 homeBtn.style.display = 'none'; 
+                // Icono de Cerrar (Cruz)
                 fullscreenIconPath.setAttribute('d', 'M6 18L18 6M6 6l12 12'); 
             } else {
                 appContainer.style.display = 'block';
                 // Mostrar el botón de casa si no estamos en el menú principal
                 if (currentView !== VIEWS.MENU) homeBtn.style.display = 'block';
+                // Icono de Expandir (Por defecto)
                 fullscreenIconPath.setAttribute('d', 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 4l-5-5');
             }
 
             map.invalidateSize();
         }
+        
+        function showModal() {
+            stopDetailsModal.classList.remove('hidden');
+            // Timeout para asegurar que la animación se activa después de que el display:block se aplica
+            setTimeout(() => {
+                stopDetailsModal.classList.add('open');
+            }, 10); 
+            // Pausar el monitor de línea cuando el modal de parada está abierto
+            stopLineMonitor();
+        }
+
+        function hideModal() {
+            stopStopEstimationMonitor(); // Detener monitor del modal
+            stopDetailsModal.classList.remove('open');
+            // Reactivar el monitor de línea si estamos en modo LINE_VIEW y hay una línea seleccionada
+            if (currentView === VIEWS.LINE_VIEW && lineId) {
+                startLineMonitor(lineId);
+            }
+            // Timeout para ocultar completamente después de la animación de cierre
+            setTimeout(() => {
+                 stopDetailsModal.classList.add('hidden');
+            }, 300);
+        }
+
 
         function showLoading(message = "Obteniendo datos en tiempo real...") {
             const loadingText = loadingOverlay.querySelector('p');
@@ -462,14 +757,29 @@
             // Ocultar mensajes de estado en cualquier modo
             document.getElementById('status-message-stop-map').classList.add('hidden');
             document.getElementById('status-message-line-view').classList.add('hidden');
+            document.getElementById('status-message-bus-search').classList.add('hidden');
         }
 
         function hideLoading() {
             loadingOverlay.classList.add('hidden');
         }
 
-        function showStatus(message, isError = false, targetId = 'status-message-stop-map') {
+        function getStatusBoxId() {
+            if (currentView === VIEWS.STOP_MAP) return 'status-message-stop-map';
+            if (currentView === VIEWS.LINE_VIEW) return 'status-message-line-view';
+            if (currentView === VIEWS.BUS_SEARCH) return 'status-message-bus-search';
+            return 'status-message-stop-map'; // Fallback
+        }
+
+        function showStatus(message, isError = false) {
+            const targetId = getStatusBoxId();
             const statusBox = document.getElementById(targetId);
+            
+            // Si estamos en una vista con mapa, ocultamos el loading
+            if (mapContainerWrapper.classList.contains('hidden') === false) {
+                hideLoading(); 
+            }
+            
             statusBox.textContent = message;
             statusBox.classList.remove('hidden', 'bg-red-100', 'bg-blue-100', 'text-red-800', 'text-blue-800');
 
@@ -496,38 +806,44 @@
         /**
          * @function getPunctualityInfo
          * @description Determina la puntualidad y calcula el desfase de tiempo estimado.
-         * @param {number} distance - desfaseEspacio en metros (positivo = retraso, negativo = adelanto).
-         * @returns {{colorClass: string, message: string}}
          */
         function getPunctualityInfo(distance) {
             const absDistance = Math.abs(distance);
-
-            // Estimar el tiempo de desfase (Desfase en metros / Velocidad promedio en m/s)
             const timeDesfaseSeconds = Math.round(absDistance / AVERAGE_SPEED_MPS);
             const timeDesfaseMinutes = Math.round(timeDesfaseSeconds / 60);
 
             if (distance > LATE_THRESHOLD) {
-                // Retraso (Rojo) -> > 500m
                 return {
                     colorClass: 'bus-retraso',
                     message: `Retraso: ${absDistance}m (aprox. ${timeDesfaseMinutes} min)`
                 };
             } else if (distance < EARLY_THRESHOLD) {
-                // Adelanto (Azul) -> < -150m
                 return {
                     colorClass: 'bus-adelanto',
                     message: `Adelanto: ${absDistance}m (aprox. ${timeDesfaseMinutes} min)`
                 };
             } else {
-                // A Tiempo (Verde) -> -150m <= distance <= 500m
                 return {
                     colorClass: 'bus-a-tiempo',
                     message: `A Tiempo (Desfase: ${distance}m)`
                 };
             }
         }
+        
+        /**
+         * @function getRouteDestination
+         * @description Devuelve el destino final de la ruta (8).
+         */
+        function getRouteDestination(lineId, routeId) { 
+             const lineVariants = allRoutes[lineId];
+             if (!lineVariants) return "Cargando...";
+             // Buscamos la variante cuya propiedad 'id' o 'routeNode[0].routeId' coincida con la ruta del bus
+             const variant = lineVariants.find(v => v.id === routeId); // En la API de Burgos, 'ruta' del bus es el 'id' de la variante.
+             return variant ? variant.label.split(' - ')[1] || variant.label : "Destino Desconocido";
+        }
 
-        // --- Lógica de la API y Fetching (SIN CAMBIOS) ---
+
+        // --- Lógica de la API y Fetching (Optimizado) ---
 
         async function fetchWithRetry(url, retries = 3, isPolling = false) { 
              for (let i = 0; i < retries; i++) {
@@ -540,58 +856,47 @@
                      if (!response.ok) {
                          if (isPolling && response.status === 403 && i < retries - 1) {
                              console.warn(`[Polling Silencioso] 403 en reintento ${i + 1}. Reintentando...`);
+                             await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                             continue;
                          } else {
                              throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
                          }
-                     } else {
-                         const text = await response.text();
-                         
-                         if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
-                             return [];
-                         }
+                     }
+                     
+                     const text = await response.text();
+                     
+                     if (!text || text.toLowerCase().trim() === 'null' || text.toLowerCase().trim() === '[]') {
+                         return [];
+                     }
 
-                         try {
-                             let jsonText = text;
-                             if (text.startsWith('URL_DECODED:')) {
-                                 jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
-                             }
-                             return JSON.parse(jsonText);
-                         } catch (e) {
-                             throw new Error(`Error al procesar la respuesta del servidor (No es JSON válido).`);
+                     try {
+                         let jsonText = text;
+                         if (text.startsWith('URL_DECODED:')) {
+                             jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
                          }
+                         return JSON.parse(jsonText);
+                     } catch (e) {
+                         throw new Error(`Error al procesar la respuesta del servidor (No es JSON válido).`);
                      }
                  } catch (error) {
                      if (i === retries - 1) {
-                         throw new Error(`Error final al obtener datos: ${error.message}`);
+                         throw error; // Lanzar el error final
                      }
                      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
                  }
              }
          }
 
-        /**
-         * @function fetchBurgosAPI
-         * @description Construye la URL de la API con los parámetros correctos.
-         * @param {string} resourceId - resourceNodes, resourceVehicles, resourceEstimations, etc.
-         * @param {string} lineId - ID de la línea (e.g., '01', 'C1').
-         * @param {Object} extraParams - Parámetros adicionales específicos de la llamada.
-         */
         async function fetchBurgosAPI(resourceId, lineId = '', extraParams = {}) { 
              const dynamicParams = new URLSearchParams();
 
              dynamicParams.set(PORTLET_PREFIX + 'formDate', Date.now());
              dynamicParams.set(PORTLET_PREFIX + 'tipo', '1');
              
-             if (lineId) {
-                 // ** CORRECCIÓN IMPORTANTE DE URL **: Usamos lineId para ambos
-                 dynamicParams.set(PORTLET_PREFIX + 'line', lineId);
-                 dynamicParams.set(PORTLET_PREFIX + 'label', lineId);
-             } else {
-                // Para llamadas globales (como resourceNodes sin línea específica), 
-                // establecemos un lineId por defecto para que la URL sea válida
-                dynamicParams.set(PORTLET_PREFIX + 'line', '01');
-                dynamicParams.set(PORTLET_PREFIX + 'label', '01');
-             }
+             // La API requiere una línea para generar la URL, usamos una por defecto si no se da
+             const targetLine = lineId || '01';
+             dynamicParams.set(PORTLET_PREFIX + 'line', targetLine);
+             dynamicParams.set(PORTLET_PREFIX + 'label', targetLine);
 
              for (const key in extraParams) {
                  dynamicParams.set(PORTLET_PREFIX + key, extraParams[key]);
@@ -605,33 +910,44 @@
                  return await fetchWithRetry(targetUrl, 3, isPollingCall); 
              } catch (error) {
                  if(!isPollingCall) {
-                     const targetStatusBox = currentView === VIEWS.STOP_MAP ? 'status-message-stop-map' : 'status-message-line-view';
-                     showStatus(error.message, true, targetStatusBox);
+                     showStatus(`Error al obtener datos: ${error.message}`, true);
                  }
                  throw error;
              }
          }
         
-        // --- Inicialización y Eventos (SIN CAMBIOS ESTRUCTURALES) ---
+        // --- Inicialización y Eventos ---
         
         function setupEventListeners() {
             btnShowStopsMap.onclick = () => navigate(VIEWS.STOP_MAP);
             btnShowLinesList.onclick = () => navigate(VIEWS.LINE_VIEW);
+            btnShowBusSearch.onclick = () => navigate(VIEWS.BUS_SEARCH); // Nuevo evento (2)
             homeBtn.onclick = goHome;
             fullscreenBtn.onclick = toggleMapFullscreen;
-            map.on('popupclose', stopStopEstimationMonitor);
+            modalCloseBtn.onclick = hideModal;
+            stopDetailsModal.onclick = (e) => { // Cerrar modal al hacer clic fuera del contenido
+                if (e.target === stopDetailsModal) hideModal();
+            };
             
-            // Eventos del Buscador de Bus por ID
-            busSearchButton.onclick = searchBusById;
-            busSearchInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') searchBusById();
-            });
+            // Historial (6)
+            window.addEventListener('popstate', handlePopState);
             
             // Eventos del Buscador de Paradas
             stopSearchInput.addEventListener('input', handleStopSearch);
             
             // Evento para el selector de ruta en el modo LINE_VIEW
             routeVariantSelectLine.onchange = handleRouteVariantChange;
+            
+            // Eventos de la nueva Búsqueda por Flota (2)
+            busSearchCalca.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'calca'));
+            busSearchMatricula.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'matricula'));
+
+        }
+        
+        function handlePopState(event) {
+            // Cuando el usuario pulsa atrás/adelante, restauramos el estado sin actualizar la URL
+            const state = event.state || {};
+            navigate(state.view || VIEWS.MENU, state.lineId, false);
         }
 
         function initMap() {
@@ -648,27 +964,63 @@
 
             setupEventListeners();
             
-            // Iniciar el monitor global para alimentar el buscador y la info de buses
+            // Iniciar el monitor global para alimentar los buscadores (2)
             startGlobalVehicleMonitor();
             
-            // Iniciar en el menú principal
-            navigate(VIEWS.MENU);
+            // Restaurar el estado de la URL si existe (6)
+            restoreStateFromURL();
         }
         
-        // --- LÓGICA DEL BUSCADOR DE BUS POR ID (REINCORPORADA) (SIN CAMBIOS) ---
+        // --- LÓGICA DEL BUSCADOR DE BUS POR FLOTA (2) ---
         
-        function searchBusById() {
-            const busId = busSearchInput.value.trim();
+        function handleFleetSearch(query, type) {
+            const resultsContainer = type === 'calca' ? busSearchResultsCalca : busSearchResultsMatricula;
+            resultsContainer.innerHTML = '';
+            const normalizedQuery = query.trim().toLowerCase();
             
-            if (!busId || isNaN(busId)) {
-                showStatus("Introduzca un ID de autobús numérico válido.", true, 'status-message-stop-map');
+            if (normalizedQuery.length < 2) {
+                resultsContainer.classList.add('hidden');
                 return;
             }
+            
+            resultsContainer.classList.remove('hidden');
+            let found = false;
 
+            Object.values(BUS_FLEET_DATA).forEach(bus => {
+                let matchValue = type === 'calca' ? bus.calca.toLowerCase() : bus.matricula.toLowerCase();
+
+                if (matchValue.includes(normalizedQuery)) {
+                    found = true;
+                    const resultHtml = `
+                        <div class="p-2 border-b border-gray-100 hover:bg-blue-50 cursor-pointer text-gray-700" data-bus-id="${bus.calca}">
+                            <span class="font-semibold text-blue-600">${bus.calca}</span> - ${bus.matricula} (${bus.modelo})
+                        </div>
+                    `;
+                    resultsContainer.insertAdjacentHTML('beforeend', resultHtml);
+                }
+            });
+            
+            if (!found) {
+                resultsContainer.insertAdjacentHTML('beforeend', `<div class="p-2 text-sm text-gray-500">No se encontraron coincidencias.</div>`);
+            }
+            
+            document.querySelectorAll(`#${resultsContainer.id} div[data-bus-id]`).forEach(div => {
+                div.onclick = (e) => {
+                    const busId = e.target.closest('div').dataset.busId;
+                    searchBusById(busId);
+                    resultsContainer.classList.add('hidden');
+                    busSearchCalca.value = '';
+                    busSearchMatricula.value = '';
+                };
+            });
+        }
+        
+        function searchBusById(busId) {
+            
             const busData = ALL_ACTIVE_BUSES.get(busId);
             
             if (!busData) {
-                showStatus(`Autobús ID ${busId} no encontrado o no activo. Intente de nuevo en ${POLLING_GLOBAL_MS / 1000} segundos.`, true, 'status-message-stop-map');
+                showStatus(`Autobús ID ${busId} (Calca) no encontrado o no activo en ninguna línea. Intente de nuevo en ${POLLING_GLOBAL_MS / 1000} segundos.`, true);
                 return;
             }
 
@@ -679,21 +1031,22 @@
 
             // 2. Navegar a la vista de línea específica
             navigate(VIEWS.LINE_VIEW, busData.lineId);
-            
-            // Limpiar el input para la próxima búsqueda
-            busSearchInput.value = '';
         }
         
-        // --- LÓGICA DEL MODO LINE_VIEW (Listado y Mapa de Línea) (SIN CAMBIOS) ---
+        // --- LÓGICA DEL MODO LINE_VIEW (Listado y Mapa de Línea) ---
 
         function loadLinesList() {
             linesListContainer.innerHTML = '';
             
             ALL_LINES.forEach(lineId => {
+                const color = LINE_COLORS[lineId] || '#6B7280'; // Gris por defecto
                 const buttonHtml = `
-                    <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-100 transition duration-150">
-                        <span class="text-lg font-bold text-gray-700">Línea ${lineId}</span>
-                        <button data-line-id="${lineId}" class="btn-select-line bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1 px-3 rounded-full shadow-md transition flex items-center">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl shadow-md hover:bg-gray-100 transition duration-150">
+                        <span class="text-lg font-bold text-gray-700 flex items-center">
+                            <span class="h-4 w-4 rounded-full mr-2 shadow-sm" style="background-color: ${color};"></span>
+                            Línea ${lineId}
+                        </span>
+                        <button data-line-id="${lineId}" class="btn-select-line bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md transition flex items-center">
                             Ver Mapa ➡️
                         </button>
                     </div>
@@ -722,7 +1075,7 @@
                 routeVariantSelectLine.innerHTML = '<option value="">Seleccione un sentido</option>';
                 
                 if (!routeData || routeData.length === 0) {
-                    showStatus(`Línea ${lineId} sin rutas activas o datos no disponibles.`, false, 'status-message-line-view');
+                    showStatus(`Línea ${lineId} sin rutas activas o datos no disponibles.`, false);
                     clearMapLayers();
                     stopLineMonitor();
                     routeVariantSelectLine.disabled = true;
@@ -739,14 +1092,20 @@
                 
                 routeVariantSelectLine.disabled = false;
                 
-                // Cargar la primera variante por defecto
-                if (routeData.length > 0) {
+                // Cargar la variante de la URL si existe, o la primera por defecto
+                const params = new URLSearchParams(window.location.search);
+                const selectedVariantId = params.get('variant') || routeData[0].id;
+
+                if (routeData.some(v => v.id === selectedVariantId)) {
+                    routeVariantSelectLine.value = selectedVariantId;
+                    await handleRouteVariantChange({ target: routeVariantSelectLine, updateURL: false });
+                } else if (routeData.length > 0) {
                     routeVariantSelectLine.value = routeData[0].id;
                     await handleRouteVariantChange({ target: routeVariantSelectLine });
                 }
 
             } catch (error) {
-                showStatus(`Error al cargar variantes de la Línea ${lineId}.`, true, 'status-message-line-view');
+                showStatus(`Error al cargar variantes de la Línea ${lineId}.`, true);
                 clearMapLayers();
                 stopLineMonitor();
             } finally {
@@ -756,6 +1115,7 @@
         
         async function handleRouteVariantChange(event) {
             const variantId = event.target.value;
+            const updateURL = event.updateURL !== false;
             
             if (!variantId || !lineId) {
                 clearMapLayers();
@@ -764,7 +1124,16 @@
             }
             
             showLoading("Dibujando ruta y cargando paradas...");
-            await renderRouteAndStops(lineId, variantId, 'status-message-line-view');
+            
+            // Actualizar URL con la variante seleccionada
+            if (updateURL) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('variant', variantId);
+                // NOTA: La lógica de actualización de URL se maneja ahora en navigate/updateURL
+                updateURL(); 
+            }
+
+            await renderRouteAndStops(lineId, variantId);
             
             // Iniciar monitor de la línea activa
             startLineMonitor(lineId).then(() => {
@@ -776,24 +1145,24 @@
                     
                     const marker = busMarkers.get(busIdToFind);
                     if (marker) {
-                        map.setView([marker.getLatLng().lat, marker.getLatLng().lng], 17);
-                        marker.openPopup();
-                        showStatus(`Bus ID ${busIdToFind} encontrado en Línea ${lineId}.`, false, 'status-message-line-view');
+                        map.setView(marker.getLatLng(), 17);
+                        // Abrir el popup del bus
+                        marker.fire('click');
+                        showStatus(`Bus ID ${busIdToFind} encontrado en Línea ${lineId}.`, false);
                     } else {
-                        showStatus(`Bus ID ${busIdToFind} ya no está activo o no pudo ser localizado.`, true, 'status-message-line-view');
+                        showStatus(`Bus ID ${busIdToFind} ya no está activo o no pudo ser localizado.`, true);
                     }
                 }
-                // --- FIN LÓGICA DE ENFOQUE ---
                 
             }).catch(e => {
                  console.error("Error en el monitor de línea:", e);
             });
             
             hideLoading();
-            showStatus(`Línea ${lineId} cargada. Sentido: ${event.target.options[event.target.selectedIndex].text}`, false, 'status-message-line-view');
+            showStatus(`Línea ${lineId} cargada. Sentido: ${event.target.options[event.target.selectedIndex].text}`, false);
         }
 
-        // --- LÓGICA DEL MODO STOP_MAP (Todas las Paradas) (SIN CAMBIOS) ---
+        // --- LÓGICA DEL MODO STOP_MAP (Todas las Paradas) ---
 
         async function loadAllStopsOnMap() {
             clearMapLayers();
@@ -806,7 +1175,7 @@
                     const allNodesData = await fetchBurgosAPI('resourceNodes', ''); 
                     
                     if (!allNodesData || allNodesData.length === 0) {
-                        showStatus('No se encontraron datos de paradas.', true, 'status-message-stop-map');
+                        showStatus('No se encontraron datos de paradas.', true);
                         return;
                     }
                     
@@ -815,7 +1184,7 @@
                     });
                     
                 } catch (error) {
-                    showStatus('Error al cargar la lista global de paradas.', true, 'status-message-stop-map');
+                    showStatus('Error al cargar la lista global de paradas.', true);
                     hideLoading();
                     return;
                 }
@@ -828,7 +1197,7 @@
             });
             
             centerMapToAllStops();
-            showStatus(`Mostrando ${Object.keys(allStopData).length} paradas activas. Use el buscador.`, false, 'status-message-stop-map');
+            showStatus(`Mostrando ${Object.keys(allStopData).length} paradas activas. Use el buscador.`, false);
             hideLoading();
         }
         
@@ -837,7 +1206,6 @@
             stopSearchResults.innerHTML = '';
             
             if (query.length < 2) {
-                // Mostrar todos si la búsqueda está vacía
                 allStopMarkers.forEach(marker => marker.setOpacity(1));
                 return;
             }
@@ -853,7 +1221,8 @@
                 const node = allStopData[id];
                 const matches = node.num.toString().includes(query) || node.name.toLowerCase().includes(query);
                 
-                marker.setOpacity(matches ? 1 : 0.2); 
+                // Opacidad sutil para destacar
+                marker.setOpacity(matches ? 1 : 0.4); 
 
                 if (matches) {
                     foundMatch = true;
@@ -868,13 +1237,15 @@
                 }
             });
             
+            // Evento para hacer click en el resultado de la búsqueda
             document.querySelectorAll('#stop-search-results div').forEach(div => {
                 div.onclick = (e) => {
                     const stopId = e.target.closest('div').dataset.stopId;
                     const marker = allStopMarkers.get(stopId);
                     if (marker) {
                         map.setView(marker.getLatLng(), 17); 
-                        marker.openPopup();
+                        // Abrir modal simulado
+                        marker.fire('click');
                         stopSearchResults.innerHTML = '';
                         stopSearchInput.value = stopId;
                     }
@@ -895,7 +1266,7 @@
             map.fitBounds(bounds);
         }
 
-        // --- Lógica Común de Dibujo (SIN CAMBIOS) ---
+        // --- Lógica Común de Dibujo y Marcadores ---
         
         function createStopMarker(lat, lng, stopId, stopName, mode) {
              const marker = L.marker([lat, lng], {
@@ -912,19 +1283,11 @@
              marker.stopName = stopName;
              marker.mode = mode; 
             
-             marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">${stopName} (${stopId})<br>Cargando horarios...</div>`);
-            
-             marker.on('popupopen', (e) => {
+             // Usar 'click' en lugar de 'popupopen' (3)
+             marker.on('click', (e) => {
                  const markerTarget = e.target;
-                 startStopEstimationMonitor(markerTarget.lineId || '', markerTarget.stopId, markerTarget); 
-                 stopLineMonitor(); 
-             });
-            
-             marker.on('popupclose', () => {
-                 // Reactivamos el monitor de línea si estamos en modo LINE_VIEW
-                 if (currentView === VIEWS.LINE_VIEW && lineId) {
-                     startLineMonitor(lineId);
-                 }
+                 loadEstimationsForStop(markerTarget.lineId || '', markerTarget.stopId, markerTarget); 
+                 showModal(); // Mostrar el modal al hacer clic
              });
             
              return marker;
@@ -934,7 +1297,7 @@
          * @function renderRouteAndStops
          * @description Dibuja la ruta y las paradas de una línea específica (Modo LINE_VIEW).
          */
-        async function renderRouteAndStops(lineId, variantId, statusId) {
+        async function renderRouteAndStops(lineId, variantId) {
             routeLineLayer.clearLayers();
             stopMarkersLayer.clearLayers();
             busMarkers.clear();
@@ -965,18 +1328,20 @@
                 });
 
             } catch (error) {
-                showStatus(`Error al cargar datos de paradas de la línea (resourceNodes).`, true, statusId);
+                showStatus(`Error al cargar datos de paradas de la línea (resourceNodes).`, true);
             }
         }
 
         function drawRoutePath(latLngs) { 
              if (!latLngs || latLngs.length === 0) return;
              const path = latLngs.map(p => [p.lat, p.lng]);
-             const polyline = L.polyline(path, { color: '#2563EB', weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
+             const color = LINE_COLORS[lineId] || '#2563EB';
+             
+             const polyline = L.polyline(path, { color: color, weight: 5, opacity: 0.7 }).addTo(routeLineLayer);
              map.fitBounds(polyline.getBounds(), { padding: [50, 50] }); 
             
              if (L.Polyline.SnakeFlow) {
-                 L.polyline(path, { color: '#2563EB', weight: 0, flow: {length: 30, trail: 5, color: '#1E40AF', speed: 1} }).addTo(routeLineLayer);
+                 L.polyline(path, { color: color, weight: 0, flow: {length: 30, trail: 5, color: color, speed: 1} }).addTo(routeLineLayer);
              }
          }
         
@@ -988,7 +1353,7 @@
              // allStopMarkers NO se limpia para el modo STOP_MAP
         }
 
-        // --- Lógica de Polling (SIN CAMBIOS) ---
+        // --- Lógica de Polling (3) ---
         
         function stopLineMonitor() { 
             if (currentLineMonitorInterval) {
@@ -1012,13 +1377,12 @@
                         firstUpdateResolve = null;
                     }
                 } catch (e) {
-                    // console.log(`[Polling Fallido NO fatal] Error al actualizar la Línea ${lineId}.`);
+                     // Error no fatal en el polling
                 }
             };
             
             poller(); 
             currentLineMonitorInterval = setInterval(poller, POLLING_LINE_MS);
-            // console.log(`Monitor de Línea ${lineId} iniciado: Polling cada ${POLLING_LINE_MS / 1000}s`);
             
             return firstUpdatePromise;
         }
@@ -1028,17 +1392,15 @@
                 clearInterval(stopEstimationInterval);
                 stopEstimationInterval = null;
             }
-            currentStopMarker = null;
         }
 
-        function startStopEstimationMonitor(lineId, stopId, marker) { 
+        function startStopEstimationMonitor(lineId, stopId) { 
             stopStopEstimationMonitor();
             
-            currentStopMarker = marker; 
-            
             const poller = async () => {
-                if (marker.getPopup().isOpen()) {
-                    await loadEstimationsForStop(marker.lineId || '', stopId, marker, true); 
+                // Solo actualiza si el modal está abierto
+                if (stopDetailsModal.classList.contains('open')) {
+                    await loadEstimationsForStop(lineId || '', stopId, null, true); 
                 } else {
                     stopStopEstimationMonitor();
                 }
@@ -1046,24 +1408,21 @@
 
             poller(); 
             stopEstimationInterval = setInterval(poller, POLLING_STOP_MS);
-            // console.log(`Monitor de Parada ${stopId} iniciado: Polling cada ${POLLING_STOP_MS / 1000}s`);
         }
         
         async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) { 
             let stopName = '';
-            if (marker.mode === 'LINE_VIEW') {
+            if (marker && marker.mode === 'LINE_VIEW') {
                 stopName = stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`;
             } else {
                 stopName = allStopData[stopId] ? allStopData[stopId].name : `Parada ${stopId}`;
             }
             
-            const stopNameHeader = `<div class="font-bold text-lg text-blue-600 text-center mb-2">${stopName}</div>`;
+            const stopNameHeader = `<div class="font-bold text-2xl text-blue-600 text-center mb-4">${stopName} <span class="text-gray-400 font-normal">(${stopId})</span></div>`;
+            const loadingHtml = `<div class="text-center py-8 text-gray-500 font-semibold">Cargando horarios de llegada...</div>`;
 
             if (!isPollingUpdate) {
-                marker.getPopup().setContent(`
-                    ${stopNameHeader}
-                    <div class="text-gray-600 font-semibold text-center py-2">Cargando horarios de llegada...</div>
-                `);
+                modalBody.innerHTML = stopNameHeader + loadingHtml;
             }
 
             try {
@@ -1073,7 +1432,6 @@
                 });
 
                 let popupContent = stopNameHeader;
-                let foundEstimations = false;
                 const allEstimates = [];
                 
                  if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
@@ -1100,40 +1458,41 @@
 
                  if (allEstimates.length > 0) {
                      popupContent += `
-                         <div class="text-xs text-gray-500 text-center mb-1">Actualizado: ${new Date().toLocaleTimeString()}</div>
-                         <table class="min-w-full text-sm">
-                             <thead>
-                                 <tr>
-                                     <th class="text-left font-semibold text-gray-700">Línea/Destino</th>
-                                     <th class="text-right font-semibold text-gray-700">Llegada</th>
-                                 </tr>
-                             </thead>
-                             <tbody>`;
+                         <div class="text-xs text-gray-500 text-center mb-4 border-b pb-2">Actualizado: ${new Date().toLocaleTimeString()}</div>
+                         <div class="space-y-3 max-h-80 overflow-y-auto pr-2">`;
 
                      allEstimates.forEach(est => {
-                         popupContent += `<tr>
-                                             <td class="pr-4 border-b border-gray-100 py-1">L${est.line} - ${est.destination}</td>
-                                             <td class="text-right font-bold text-blue-700 border-b border-gray-100">${secondsToTime(est.seconds)}</td>
-                                         </tr>`;
-                         foundEstimations = true;
+                         const lineBgColor = LINE_COLORS[est.line] || '#6B7280';
+                         popupContent += `
+                            <div class="flex justify-between items-center p-3 rounded-xl shadow-md border border-gray-100">
+                                <div class="flex items-center">
+                                    <span class="font-bold text-lg p-1 px-3 rounded-full text-white shadow-lg mr-3" style="background-color: ${lineBgColor};">L${est.line}</span>
+                                    <span class="text-gray-700 font-medium">${est.destination}</span>
+                                </div>
+                                <span class="font-extrabold text-xl text-green-600">${secondsToTime(est.seconds)}</span>
+                            </div>
+                         `;
                      });
-                     popupContent += `</tbody></table>`;
+                     popupContent += `</div>`;
                  }
                 
-                 if (!foundEstimations) {
-                     popupContent += `<p class="mt-2 text-sm text-gray-500 text-center">Sin estimaciones en este momento para esta parada.</p>`;
+                 if (allEstimates.length === 0) {
+                     popupContent += `<p class="mt-4 text-lg text-gray-500 text-center">Sin estimaciones de llegada en este momento para esta parada.</p>`;
+                 }
+                 
+                 modalBody.innerHTML = popupContent;
+                 
+                 // Iniciar el polling para mantener el modal actualizado
+                 if (!stopEstimationInterval) {
+                    startStopEstimationMonitor(lineId, stopId);
                  }
 
-                 popupContent += `<button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full mt-3">Pantalla Completa</button>`; 
-
-                 marker.getPopup().setContent(popupContent);
-                 marker.update(); 
 
             } catch (error) {
-                marker.getPopup().setContent(`
+                modalBody.innerHTML = `
                     ${stopNameHeader}
-                    <div class="text-red-600 text-center">Error al cargar horarios. Reintentando...</div>
-                `);
+                    <div class="text-red-600 text-center py-4">Error al cargar horarios. Reintentando automáticamente.</div>
+                `;
                 console.error("Error al cargar estimaciones:", error);
             }
         }
@@ -1147,7 +1506,6 @@
              
              updateAllVehiclesGlobally();
              globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_GLOBAL_MS);
-             // console.log(`Monitor Global de Buses iniciado: Polling cada ${POLLING_GLOBAL_MS / 1000}s`);
         }
         
         async function updateAllVehiclesGlobally() { 
@@ -1176,19 +1534,12 @@
              newActiveBuses.forEach((bus, id) => ALL_ACTIVE_BUSES.set(id, bus));
         }
 
-        function getRouteDestination(lineId, routeId) { 
-             const lineVariants = allRoutes[lineId];
-             if (!lineVariants) return "Cargando...";
-             const variant = lineVariants.find(v => v.routeNode && v.routeNode.length > 0 && v.routeNode[0].routeId === routeId);
-             return variant ? variant.label : "Desconocido";
-        }
-
         async function loadNextStopEstimation(busId, lineId, marker) { 
             const busData = ALL_ACTIVE_BUSES.get(busId.toString()); 
             const fleetData = BUS_FLEET_DATA[busId];
             
             if (!busData) {
-                marker.setPopupContent(`<div class="text-red-600">Bus ID ${busId} no encontrado o ha desaparecido.</div>`);
+                marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Bus ID ${busId} no encontrado o ha desaparecido.</div>`);
                 return;
             }
 
@@ -1196,18 +1547,18 @@
             const punctuality = getPunctualityInfo(busData.desfaseEspacio);
             
             try {
+                // Destino obtenido de la lista de rutas cargadas (8)
                 const destination = getRouteDestination(lineId, busData.ruta);
 
                 let fleetInfo = `
-                    <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg border border-red-300">
-                        <p class="font-semibold text-gray-700">Flota: <span class="text-red-600">Información desconocida (ID no mapeado)</span></p>
+                    <div class="text-sm mt-3 p-2 bg-red-50 rounded-lg border border-red-300">
+                        <p class="font-semibold text-gray-700">Flota: <span class="text-red-600">ID ${busId} no mapeado</span></p>
                     </div>
                 `;
 
                 if (fleetData) {
                     fleetInfo = `
-                        <div class="text-sm mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                            <p><span class="font-semibold text-gray-700">Calca:</span> ${fleetData.calca}</p>
+                        <div class="text-sm mt-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
                             <p><span class="font-semibold text-gray-700">Modelo:</span> ${fleetData.modelo}</p>
                             <p><span class="font-semibold text-gray-700">Matrícula:</span> ${fleetData.matricula}</p>
                         </div>
@@ -1215,19 +1566,24 @@
                 }
                 
                 const punctualityClass = punctuality.colorClass.replace('bus-', 'text-');
+                const lineColor = LINE_COLORS[lineId] || '#3B82F6';
+                
                 const popupContent = `
-                    <div class="font-bold text-lg text-blue-600 border-b pb-2">BUS ID: ${busId} (Línea ${lineId})</div>
-                    <p class="text-sm mt-2">Destino: <span class="font-semibold">${destination}</span></p>
-                    <p class="text-sm">Posición: <span class="font-bold ${punctualityClass}">${punctuality.message}</span></p>
-                    ${fleetInfo}
-                    <p class="text-xs text-gray-500 mt-2 text-center">Datos en tiempo real (Bus: ${POLLING_LINE_MS / 1000}s)</p>
-                    <button onclick="window.toggleMapFullscreen()" class="fullscreen-toggle-btn w-full">Pantalla Completa</button>
+                    <div class="font-bold text-lg text-white p-2 rounded-t-lg text-center" style="background-color: ${lineColor};">
+                        BUS ID: ${busId} (Línea ${lineId})
+                    </div>
+                    <div class="p-4 bg-white rounded-b-lg">
+                        <p class="text-md mt-1 text-gray-700">Destino: <span class="font-extrabold text-blue-800">${destination}</span></p>
+                        <p class="text-md mt-1 text-gray-700">Estado: <span class="font-bold ${punctualityClass}">${punctuality.message}</span></p>
+                        ${fleetInfo}
+                        <p class="text-xs text-gray-500 mt-3 text-center">Datos en tiempo real (Bus: ${POLLING_LINE_MS / 1000}s)</p>
+                    </div>
                 `;
                 
                 marker.setPopupContent(popupContent);
                 
             } catch (error) {
-                marker.setPopupContent(`<div class="text-red-600">Error al cargar info del bus.</div>`);
+                marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Error al cargar info del bus.</div>`);
                 console.error("Error al cargar estimación del vehículo:", error);
             }
         }
@@ -1247,7 +1603,6 @@
                  activeIds.add(busId);
 
                  if (isNaN(bus.lat) || isNaN(bus.lng)) {
-                     // console.warn(`Bus ID ${busId} tiene coordenadas inválidas. Omitiendo actualización.`);
                      return; 
                  }
 
@@ -1260,21 +1615,26 @@
                      if (iconElement) {
                          iconElement.className = `leaflet-marker-icon leaflet-zoom-animated leaflet-interactive bus-icon ${punctuality.colorClass}`;
                      }
+                     // Asegurar que el popup esté actualizado si está abierto
+                     if (marker.getPopup().isOpen()) {
+                          loadNextStopEstimation(bus.id, lineId, marker);
+                     }
+                     
                  } else {
                      const icon = L.divIcon({
                          className: `bus-icon ${punctuality.colorClass}`,
-                         html: `<span class="leading-none text-sm">${busId}</span>`,
-                         iconSize: [36, 36],
-                         iconAnchor: [18, 18]
+                         html: `<span class="leading-none">${busId}</span>`,
+                         iconSize: [40, 40],
+                         iconAnchor: [20, 20]
                      });
 
                      marker = L.marker([bus.lat, bus.lng], { icon: icon, title: `Bus ID: ${busId} (${punctuality.message})` }).addTo(busMarkersLayer);
                      
+                     // Usamos el popup estándar de Leaflet para el bus, ya que solo necesitamos verlo en la línea.
                      marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
                      
                      marker.on('popupopen', (e) => {
                          loadNextStopEstimation(bus.id, lineId, e.target);
-                         stopStopEstimationMonitor();
                      });
                      
                      busMarkers.set(busId, marker);
@@ -1293,9 +1653,6 @@
              });
          }
 
-        // Exponer la función globalmente para que los popups puedan llamarla
-        window.toggleMapFullscreen = toggleMapFullscreen;
-        
         document.addEventListener('DOMContentLoaded', initMap);
     </script>
 </body>
