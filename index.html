@@ -592,7 +592,8 @@
                 headerSubtitle.textContent = 'Todas las paradas activas con buscador. Ubicación en vivo.';
                 
                 loadAllStopsOnMap();
-                startUserLocationMonitor(); // Iniciar la geolocalización
+                // [CAMBIO 2]: Iniciar el monitor de ubicación, pero SIN auto-centrado.
+                startUserLocationMonitor(); 
                 
             } else if (view === VIEWS.LINE_VIEW) {
                 lineViewControls.classList.remove('hidden');
@@ -670,10 +671,11 @@
                     userLocationMarker = L.marker(latlng, { icon: icon }).addTo(map);
                 }
                 
-                // Mover el mapa al usuario la primera vez o si está muy lejos
-                if (!map.getBounds().contains(latlng)) {
+                // [CAMBIO 2]: Eliminamos el auto-centrado aquí para evitar saltos.
+                /* if (!map.getBounds().contains(latlng)) {
                      map.setView(latlng, map.getZoom() < 15 ? 15 : map.getZoom());
                 }
+                */
             };
 
             const error = (err) => {
@@ -1633,8 +1635,14 @@
                      // Usamos el popup estándar de Leaflet para el bus, ya que solo necesitamos verlo en la línea.
                      marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
                      
+                     // [CAMBIO 1]: Aseguramos que el popup se cargue al hacer click
                      marker.on('popupopen', (e) => {
                          loadNextStopEstimation(bus.id, lineId, e.target);
+                     });
+                     
+                     // [CAMBIO 1]: Añadimos un listener 'click' al marcador que abre el popup
+                     marker.on('click', (e) => {
+                         e.target.openPopup();
                      });
                      
                      busMarkers.set(busId, marker);
