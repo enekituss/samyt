@@ -1135,6 +1135,7 @@
                 updateURL(); 
             }
 
+            // Llamada a la función de renderizado de ruta y paradas
             await renderRouteAndStops(lineId, variantId);
             
             // Iniciar monitor de la línea activa
@@ -1162,6 +1163,9 @@
             
             hideLoading();
             showStatus(`Línea ${lineId} cargada. Sentido: ${event.target.options[event.target.selectedIndex].text}`, false);
+            
+            // [CORRECCIÓN MAPA]: Forzar la invalidación del tamaño del mapa después de la carga para que se muestre correctamente
+            map.invalidateSize();
         }
 
         // --- LÓGICA DEL MODO STOP_MAP (Todas las Paradas) ---
@@ -1303,7 +1307,9 @@
             routeLineLayer.clearLayers();
             stopMarkersLayer.clearLayers();
             busMarkers.clear();
-            stopDataCache[lineId] = {};
+            
+            // [CORRECCIÓN 1]: Aseguramos que el caché de la línea esté disponible antes de usarlo
+            stopDataCache[lineId] = stopDataCache[lineId] || {};
             
             const variant = allRoutes[lineId].find(v => v.id === variantId);
             if (!variant) return;
@@ -1313,8 +1319,28 @@
             
             // 2. Dibujar las paradas
             try {
-                // resourceNodes con lineId solo trae las paradas de la línea
-                const nodesData = await fetchBurgosAPI('resourceNodes', lineId); 
+                // [CORRECCIÓN DE LENTITUD]: Reutilizar allStopData si ya está cargada
+                let nodesData = [];
+                if (Object.keys(allStopData).length > 0) {
+                    // Si ya tenemos el mapa global (que incluye todas las paradas), filtramos localmente para velocidad
+                    const requiredNodeNums = new Set(variant.routeNode.map(n => n.num.toString()));
+                    nodesData = Object.values(allStopData).filter(node => requiredNodeNums.has(node.num.toString()));
+                } else {
+                    // Si no, hacemos la llamada a la API por línea (puede ser lenta la primera vez)
+                    nodesData = await fetchBurgosAPI('resourceNodes', lineId); 
+                    // Y llenamos el cache local de la línea
+                    nodesData.forEach(node => {
+                        allStopData[node.num.toString()] = node; // Actualizamos el caché global también
+                        stopDataCache[lineId][node.num.toString()] = node;
+                    });
+                }
+                
+                if (nodesData.length === 0) {
+                    showStatus('No se encontraron datos de paradas para esta ruta.', true);
+                    return;
+                }
+                
+                // Mapeamos los datos de nodo (parada) por su número para un acceso rápido
                 const nodesMap = new Map(nodesData.map(node => [node.num.toString(), node])); 
 
                 variant.routeNode.forEach(routeNode => {
@@ -1325,6 +1351,7 @@
 
                     stopDataCache[lineId][nodeNum] = fullNodeData;
                     
+                    // [CORRECCIÓN 1]: Creamos el marcador de parada con la información correcta.
                     const marker = createStopMarker(fullNodeData.lat, fullNodeData.lng, nodeNum, fullNodeData.name, 'LINE_VIEW');
                     marker.lineId = lineId;
                 });
@@ -1635,14 +1662,20 @@
                      // Usamos el popup estándar de Leaflet para el bus, ya que solo necesitamos verlo en la línea.
                      marker.bindPopup(`<div class="text-gray-600 font-semibold py-2 text-center">Cargando datos del Bus ID ${busId}...</div>`);
                      
-                     // [CAMBIO 1]: Aseguramos que el popup se cargue al hacer click
+                     // [CORRECCIÓN 1]: Unificamos la carga de información en el click/open popup.
                      marker.on('popupopen', (e) => {
-                         loadNextStopEstimation(bus.id, lineId, e.target);
+                         // Solo cargamos los datos si el popup está vacío o si es una actualización (para evitar loops)
+                         if (e.target.getPopup().getContent().includes('Cargando datos') || e.originalEvent?.type !== 'click') {
+                            loadNextStopEstimation(bus.id, lineId, e.target);
+                         }
                      });
                      
-                     // [CAMBIO 1]: Añadimos un listener 'click' al marcador que abre el popup
                      marker.on('click', (e) => {
-                         e.target.openPopup();
+                         // Forzamos la carga de datos ANTES de abrir el popup, para que la info esté ahí.
+                         loadNextStopEstimation(bus.id, lineId, e.target).then(() => {
+                            e.target.openPopup();
+                         });
+                         
                      });
                      
                      busMarkers.set(busId, marker);
