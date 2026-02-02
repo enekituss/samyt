@@ -2,8 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bus Burgos | Mapa y Buscador en Vivo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bus Burgos | Monitor en Vivo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -201,7 +201,7 @@
 <body class="bg-gray-50 min-h-screen p-4 sm:p-8 font-sans">
 
     <!-- Botón de Casa Global -->
-    <button id="home-btn" class="fixed top-4 left-4 z-50 bg-white text-blue-600 p-3 rounded-full shadow-lg border border-gray-200 hover:bg-gray-100 transition duration-150 ease-in-out hidden" title="Volver al Menú Principal">
+    <button id="home-btn" type="button" class="fixed top-4 left-4 z-50 bg-white text-blue-600 p-3 rounded-full shadow-lg border border-gray-200 hover:bg-gray-100 transition duration-150 ease-in-out hidden" title="Volver al Menú Principal">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-10l-2-2m-2 2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
@@ -217,15 +217,15 @@
 
         <!-- PANTALLA PRINCIPAL: Menú de Selección -->
         <div id="menu-screen" class="bg-white p-6 rounded-xl shadow-2xl mb-8 flex flex-col items-center justify-center space-y-6" style="min-height: 400px;">
-            <h2 class="text-2xl font-bold text-gray-800">⚠️ ¡ATENCIÓN! PÁGINA EN MANTENIMIENTO. LAS FUNCIONALIDADES PUEDEN NO EJECUTARSE CORRECTAMENTE 29/01/2026 (09:32:04)</h2>
+            <h2 class="text-2xl font-bold text-gray-800">⚠️ Monitor Oficial SMyT Burgos</h2>
             
-            <button id="btn-show-stops-map" class="w-full sm:w-80 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
+            <button type="button" id="btn-show-stops-map" class="w-full sm:w-80 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 📍 Paradas Bus (Buscador)
             </button>
-            <button id="btn-show-lines-list" class="w-full sm:w-80 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
+            <button type="button" id="btn-show-lines-list" class="w-full sm:w-80 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 🗺️ Líneas Bus (Rutas y Buses en Vivo)
             </button>
-            <button id="btn-show-bus-search" class="w-full sm:w-80 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
+            <button type="button" id="btn-show-bus-search" class="w-full sm:w-80 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 🔍 Buscar Bus por Flota (Calca/Matrícula)
             </button>
         </div>
@@ -284,7 +284,7 @@
 
         <!-- Contenedor del Mapa (Wrapper) -->
         <div id="map-container-wrapper" class="relative hidden">
-            <button id="fullscreen-btn" class="absolute top-4 right-4 z-[99999] bg-white text-gray-700 p-2 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out border border-gray-300" title="Pantalla Completa">
+            <button id="fullscreen-btn" type="button" class="absolute top-4 right-4 z-[99999] bg-white text-gray-700 p-2 rounded-full shadow-lg hover:bg-gray-100 transition duration-150 ease-in-out border border-gray-300" title="Pantalla Completa">
                 <svg id="fullscreen-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path id="fullscreen-path" stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 4l-5-5" />
                 </svg>
@@ -303,7 +303,7 @@
     <!-- MODAL DINÁMICO DE DETALLES DE PARADA -->
     <div id="stop-details-modal" class="hidden" role="dialog" aria-modal="true">
         <div id="modal-content" class="relative">
-            <button id="modal-close-btn" class="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition" title="Cerrar">
+            <button id="modal-close-btn" type="button" class="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition" title="Cerrar">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -317,7 +317,15 @@
     <script>
         // === CONFIGURACIÓN DE LA APLICACIÓN ===
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
-        const CORS_PROXY = 'https://corsproxy.io/?';
+        
+        // --- ROTACIÓN DE PROXIES PARA EVITAR BLOQUEO ---
+        // Se usarán secuencialmente si alguno falla
+        const CORS_PROXIES = [
+            'https://api.allorigins.win/raw?url=',
+            'https://corsproxy.io/?',
+            'https://thingproxy.freeboard.io/fetch/'
+        ];
+
         const POLLING_LINE_MS = 10000; // Refresco cada 10s
         const POLLING_STOP_MS = 10000;
         const POLLING_GLOBAL_MS = 60000;
@@ -668,51 +676,67 @@
         }
         
         function clearMapLayers() { 
-             busMarkersLayer.clearLayers();
-             routeLineLayer.clearLayers();
-             stopMarkersLayer.clearLayers();
+             // Chequeo de seguridad antes de limpiar
+             if (busMarkersLayer) busMarkersLayer.clearLayers();
+             if (routeLineLayer) routeLineLayer.clearLayers();
+             if (stopMarkersLayer) stopMarkersLayer.clearLayers();
              busMarkers.clear();
         }
 
         // --- API ---
         async function fetchWithRetry(url, retries = 3, isPolling = false) { 
-             for (let i = 0; i < retries; i++) {
-                 try {
-                     const headers = new Headers(); headers.append('Referer', BASE_URL); 
-                     // Timeout de 10s para evitar cuelgues eternos
-                     const controller = new AbortController();
-                     const id = setTimeout(() => controller.abort(), 10000);
-                     
-                     const response = await fetch(CORS_PROXY + encodeURIComponent(url), { 
-                         headers: headers,
-                         signal: controller.signal 
-                     });
-                     clearTimeout(id);
+            // Try defined proxies in order
+            for (let proxy of CORS_PROXIES) {
+                // Try retries per proxy
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        const headers = new Headers(); 
+                        // Some proxies allow passing headers, others don't
+                        
+                        // Timeout de 10s para evitar cuelgues eternos
+                        const controller = new AbortController();
+                        const id = setTimeout(() => controller.abort(), 10000);
+                        
+                        const response = await fetch(proxy + encodeURIComponent(url), { 
+                            headers: headers,
+                            signal: controller.signal 
+                        });
+                        clearTimeout(id);
 
-                     if (!response.ok) throw new Error(response.status);
-                     const text = await response.text();
-                     
-                     if (!text || text.trim() === 'null' || text.trim() === '[]') return [];
-                     let jsonText = text.startsWith('URL_DECODED:') ? decodeURIComponent(text.replace('URL_DECODED:', '')) : text;
-                     
-                     try {
-                        return JSON.parse(jsonText);
-                     } catch(e) {
-                        return []; // Si falla el parseo, devolver vacío en vez de error
-                     }
-                 } catch (error) {
-                     if (i === retries - 1) {
-                         console.warn("Fetch failed:", url, error);
-                         return []; // Devolver array vacío en lugar de lanzar excepción para no romper la UI
-                     }
-                     await new Promise(resolve => setTimeout(resolve, 500));
-                 }
-             }
-             return [];
+                        if (!response.ok) throw new Error(response.status);
+                        const text = await response.text();
+                        
+                        if (!text || text.trim() === 'null' || text.trim() === '[]') return [];
+                        // Some proxies return JSON directly, others might wrap it. 
+                        // The 'raw' proxy usually returns the raw content.
+                        let jsonText = text;
+                        if (text.startsWith('URL_DECODED:')) {
+                            jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                        }
+                        
+                        try {
+                           const data = JSON.parse(jsonText);
+                           // If successful, return immediately
+                           return data;
+                        } catch(e) {
+                           // If parse fails, might be an error page from proxy
+                           console.warn("JSON Parse failed for proxy", proxy);
+                           continue; // try next attempt
+                        }
+                    } catch (error) {
+                        // console.warn("Fetch failed:", proxy, url, error);
+                        // Wait a bit before retry
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+            }
+            return []; // All failed
          }
 
         async function fetchBurgosAPI(resourceId, lineId = '', extraParams = {}) { 
              const dynamicParams = new URLSearchParams();
+             // Add timestamp to prevent caching at proxy level
+             dynamicParams.set('t', Date.now()); 
              dynamicParams.set(PORTLET_PREFIX + 'formDate', Date.now());
              dynamicParams.set(PORTLET_PREFIX + 'tipo', '1');
              dynamicParams.set(PORTLET_PREFIX + 'line', lineId || '01');
@@ -721,34 +745,49 @@
              const targetUrl = `${BASE_URL}?${BASE_PARAMS}&p_p_resource_id=${resourceId}&${dynamicParams.toString()}`;
              
              // No lanzamos error aquí, fetchWithRetry devuelve [] si falla
-             return await fetchWithRetry(targetUrl, 3, resourceId === 'resourceVehicles');
+             return await fetchWithRetry(targetUrl, 2, resourceId === 'resourceVehicles');
          }
         
         // --- Init ---
         function setupEventListeners() {
-            btnShowStopsMap.onclick = () => navigate(VIEWS.STOP_MAP);
-            btnShowLinesList.onclick = () => navigate(VIEWS.LINE_VIEW);
-            btnShowBusSearch.onclick = () => navigate(VIEWS.BUS_SEARCH);
-            homeBtn.onclick = goHome;
-            fullscreenBtn.onclick = toggleMapFullscreen;
-            modalCloseBtn.onclick = hideModal;
-            stopDetailsModal.onclick = (e) => { if (e.target === stopDetailsModal) hideModal(); };
+            // Asegurar que los botones existen antes de añadir listeners
+            const btns = {
+                btnShowStopsMap: document.getElementById('btn-show-stops-map'),
+                btnShowLinesList: document.getElementById('btn-show-lines-list'),
+                btnShowBusSearch: document.getElementById('btn-show-bus-search'),
+                homeBtn: document.getElementById('home-btn'),
+                fullscreenBtn: document.getElementById('fullscreen-btn'),
+                modalCloseBtn: document.getElementById('modal-close-btn')
+            };
+
+            if(btns.btnShowStopsMap) btns.btnShowStopsMap.onclick = (e) => { e.preventDefault(); navigate(VIEWS.STOP_MAP); };
+            if(btns.btnShowLinesList) btns.btnShowLinesList.onclick = (e) => { e.preventDefault(); navigate(VIEWS.LINE_VIEW); };
+            if(btns.btnShowBusSearch) btns.btnShowBusSearch.onclick = (e) => { e.preventDefault(); navigate(VIEWS.BUS_SEARCH); };
+            if(btns.homeBtn) btns.homeBtn.onclick = (e) => { e.preventDefault(); goHome(); };
+            if(btns.fullscreenBtn) btns.fullscreenBtn.onclick = (e) => { e.preventDefault(); toggleMapFullscreen(); };
+            if(btns.modalCloseBtn) btns.modalCloseBtn.onclick = (e) => { e.preventDefault(); hideModal(); };
+            
+            if(stopDetailsModal) stopDetailsModal.onclick = (e) => { if (e.target === stopDetailsModal) hideModal(); };
             window.addEventListener('popstate', (e) => navigate((e.state || {}).view || VIEWS.MENU, (e.state || {}).lineId, false));
-            stopSearchInput.addEventListener('input', handleStopSearch);
-            routeVariantSelectLine.onchange = handleRouteVariantChange;
-            busSearchCalca.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'calca'));
-            busSearchMatricula.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'matricula'));
+            
+            if(stopSearchInput) stopSearchInput.addEventListener('input', handleStopSearch);
+            if(routeVariantSelectLine) routeVariantSelectLine.onchange = handleRouteVariantChange;
+            if(busSearchCalca) busSearchCalca.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'calca'));
+            if(busSearchMatricula) busSearchMatricula.addEventListener('input', (e) => handleFleetSearch(e.target.value, 'matricula'));
         }
 
         function initMap() {
+            if (map) return;
+            // Check if L (Leaflet) is loaded
+            if (typeof L === 'undefined') {
+                alert("Error: No se pudo cargar el mapa. Verifique su conexión.");
+                return;
+            }
             map = L.map('map').setView([42.3459, -3.6969], 14);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
             busMarkersLayer = L.layerGroup().addTo(map);
             routeLineLayer = L.layerGroup().addTo(map);
             stopMarkersLayer = L.layerGroup().addTo(map);
-            setupEventListeners();
-            startGlobalVehicleMonitor();
-            restoreStateFromURL();
         }
         
         // --- Buscador Flota ---
@@ -782,7 +821,7 @@
             linesListContainer.innerHTML = '';
             ALL_LINES.forEach(lineId => {
                 const color = LINE_COLORS[lineId] || '#6B7280';
-                linesListContainer.insertAdjacentHTML('beforeend', `<div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl shadow-md hover:bg-gray-100 transition duration-150"><span class="text-lg font-bold text-gray-700 flex items-center"><span class="h-4 w-4 rounded-full mr-2 shadow-sm" style="background-color: ${color};"></span>Línea ${lineId}</span><button onclick="navigate(VIEWS.LINE_VIEW, '${lineId}')" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md transition flex items-center">Ver Mapa ➡️</button></div>`);
+                linesListContainer.insertAdjacentHTML('beforeend', `<div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl shadow-md hover:bg-gray-100 transition duration-150"><span class="text-lg font-bold text-gray-700 flex items-center"><span class="h-4 w-4 rounded-full mr-2 shadow-sm" style="background-color: ${color};"></span>Línea ${lineId}</span><button type="button" onclick="navigate(VIEWS.LINE_VIEW, '${lineId}')" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md transition flex items-center">Ver Mapa ➡️</button></div>`);
             });
         }
 
@@ -791,7 +830,7 @@
             
             try {
                 showLoading(`Cargando Línea ${lineId}...`);
-                map.setView([42.3459, -3.6969], 14); 
+                if(map) map.setView([42.3459, -3.6969], 14); 
                 
                 const routeData = await fetchBurgosAPI('resourceRoutes', lineId);
                 
@@ -943,8 +982,8 @@
             // Verificación de operación antes de limpiar capas
             if (opId !== currentOperationId) return;
 
-            routeLineLayer.clearLayers(); 
-            stopMarkersLayer.clearLayers(); 
+            // Seguridad por si las capas no existen
+            clearMapLayers();
             
             stopDataCache[lineId] = stopDataCache[lineId] || {};
             const variant = allRoutes[lineId].find(v => v.id === variantId);
@@ -1270,7 +1309,11 @@
              }
          }
 
-        document.addEventListener('DOMContentLoaded', initMap);
+        // Init App when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            initMap();
+        });
     </script>
 </body>
 </html>
