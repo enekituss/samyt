@@ -1047,7 +1047,7 @@
                               if (routeEst.publicEstimationVHExts) {
                                   routeEst.publicEstimationVHExts.forEach(est => {
                                       if (est.destination) {
-                                           allEstimates.push({ line: routeEst.line, destination: est.destination, seconds: est.seconds });
+                                          allEstimates.push({ line: routeEst.line, destination: est.destination, seconds: est.seconds });
                                       }
                                   });
                               }
@@ -1125,8 +1125,8 @@
 
             const punctuality = getPunctualityInfo(busData.desfaseEspacio);
             try {
-                const destination = getRouteDestination(lineId, busData.ruta);
-                
+                // USAMOS LOS DATOS CALCULADOS PREVIAMENTE EN updateBusMarkers
+                const destination = busData.destination || "Desconocido";
                 let nextStopName = "Calculando...";
                 if (busData.paradaProxima && allStopData[busData.paradaProxima]) {
                     nextStopName = allStopData[busData.paradaProxima].name;
@@ -1186,18 +1186,46 @@
             } catch (error) { marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Error info bus.</div>`); }
         }
         
-        // --- FIX ICONOS FANTASMA ---
+        // --- FIX ICONOS FANTASMA Y ENRIQUECIMIENTO DE DATOS ---
         function updateBusMarkers(lineId, vehiclesData) { 
              const vehicles = vehiclesData || [];
-             // Usamos un Set de strings para asegurar unicidad absoluta
              const activeIdsNow = new Set(); 
              
+             // Buscar la variante de ruta actual para calcular destino y paradas
+             const currentVariantId = routeVariantSelectLine ? routeVariantSelectLine.value : null;
+             const routeVariant = allRoutes[lineId] ? allRoutes[lineId].find(r => r.id == currentVariantId) : null;
+
              vehicles.forEach(bus => {
-                 const busId = String(bus.id); // Forzar string
+                 const busId = String(bus.id);
                  activeIdsNow.add(busId);
                  
                  if (isNaN(bus.lat) || isNaN(bus.lng)) return; 
                  
+                 // ENRIQUECIMIENTO DE DATOS: Calcular Destino y Próxima Parada
+                 if (routeVariant && bus.ruta == currentVariantId) { // Solo si coincide con la ruta mostrada
+                     // 1. Destino
+                     bus.destination = routeVariant.label.includes(' - ') ? routeVariant.label.split(' - ')[1] : routeVariant.label;
+                     
+                     // 2. Próxima Parada (Buscamos la más cercana geográficamente)
+                     if (routeVariant.routeNode && Object.keys(allStopData).length > 0) {
+                        let minDist = Infinity;
+                        let nearestStopId = null;
+                        
+                        routeVariant.routeNode.forEach(nodeRef => {
+                            const stop = allStopData[nodeRef.num];
+                            if (stop) {
+                                // Distancia Manhattan simple para velocidad (suficiente para este propósito)
+                                const dist = Math.abs(stop.lat - bus.lat) + Math.abs(stop.lng - bus.lng);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    nearestStopId = stop.num;
+                                }
+                            }
+                        });
+                        if (nearestStopId) bus.paradaProxima = nearestStopId;
+                     }
+                 }
+
                  // Guardar datos actualizados en cache global
                  ALL_ACTIVE_BUSES.set(busId, { ...bus, lineId });
 
@@ -1234,15 +1262,10 @@
              });
 
              // LIMPIEZA DE FANTASMAS
-             // Iteramos sobre TODOS los marcadores que tenemos pintados actualmente
              for (const [id, marker] of busMarkers) {
-                 // Si el ID del marcador no está en la lista de buses que acabamos de recibir de la API...
                  if (!activeIdsNow.has(id)) {
-                     // ... significa que el bus se ha ido o ha cambiado de línea -> LO BORRAMOS
                      busMarkersLayer.removeLayer(marker);
                      busMarkers.delete(id);
-                     // Opcional: borrar de ALL_ACTIVE_BUSES si queremos ser estrictos, 
-                     // pero dejarlo puede ayudar al buscador global.
                  }
              }
          }
@@ -1251,8 +1274,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-
