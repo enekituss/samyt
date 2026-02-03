@@ -317,7 +317,14 @@
     <script>
         // === CONFIGURACIÓN DE LA APLICACIÓN ===
         const BASE_URL = 'https://www.aytoburgos.es/web/movilidad/rutas-en-directo';
-        const CORS_PROXY = 'https://corsproxy.io/?';
+        
+        // --- PROXIES DE RESPALDO (CORS) ---
+        // Lista de proxies para evitar bloqueos CORS. Se probarán en orden.
+        const PROXIES = [
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url='
+        ];
+
         const POLLING_LINE_MS = 5000; // Refresco más rápido (5s) para tiempo real
         const POLLING_STOP_MS = 10000;
         const POLLING_GLOBAL_MS = 60000;
@@ -679,47 +686,63 @@
              busMarkers.clear();
         }
 
-        // --- API ACTUALIZADA (ENDPOINT HANDLING) ---
-        async function fetchWithRetry(url, retries = 3) { 
-             for (let i = 0; i < retries; i++) {
-                 try {
-                     const headers = new Headers(); 
-                     // Evitar cacheo
-                     headers.append('Cache-Control', 'no-cache, no-store, must-revalidate');
-                     headers.append('Pragma', 'no-cache');
-                     headers.append('Expires', '0');
+        // --- API ACTUALIZADA (ENDPOINT HANDLING CON FALLBACKS CORS) ---
+        async function fetchWithRetry(targetUrl, retries = 3) { 
+            // Intentamos con cada proxy disponible en orden
+            for (const proxy of PROXIES) {
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        // Construimos la URL final con el proxy
+                        // Nota: encodeURIComponent es crucial para que el proxy entienda la URL destino
+                        const finalUrl = proxy + encodeURIComponent(targetUrl);
 
-                     const controller = new AbortController();
-                     const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
-                     
-                     const response = await fetch(CORS_PROXY + encodeURIComponent(url), { 
-                         headers: headers,
-                         signal: controller.signal,
-                         cache: 'no-store' 
-                     });
-                     clearTimeout(id);
+                        const controller = new AbortController();
+                        const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-                     if (!response.ok) throw new Error(response.status);
-                     const text = await response.text();
-                     
-                     if (!text || text.trim() === 'null' || text.trim() === '[]') return [];
-                     let jsonText = text.startsWith('URL_DECODED:') ? decodeURIComponent(text.replace('URL_DECODED:', '')) : text;
-                     
-                     try {
-                        return JSON.parse(jsonText);
-                     } catch(e) {
-                        return [];
-                     }
-                 } catch (error) {
-                     if (i === retries - 1) {
-                         console.warn("Fetch failed:", url, error);
-                         return [];
-                     }
-                     await new Promise(resolve => setTimeout(resolve, 500));
-                 }
-             }
-             return [];
-         }
+                        // Eliminamos headers personalizados para evitar "Simple Request" vs "Preflight" issues con CORS
+                        // La URL ya lleva timestamp (_t) para evitar caché
+                        const response = await fetch(finalUrl, {
+                            method: 'GET',
+                            signal: controller.signal
+                        });
+                        clearTimeout(id);
+
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        
+                        const text = await response.text();
+                        if (!text || text.trim() === 'null' || text.trim() === '[]') return [];
+
+                        // Limpieza específica para allorigins que a veces envuelve en JSON o añade prefijos si no se usa raw
+                        // (aunque usamos /raw, por si acaso)
+                        let jsonText = text;
+                        if (text.startsWith('URL_DECODED:')) {
+                            jsonText = decodeURIComponent(text.replace('URL_DECODED:', ''));
+                        }
+                        
+                        try {
+                            return JSON.parse(jsonText);
+                        } catch (e) {
+                            console.warn("Error parseando JSON con proxy " + proxy, e);
+                            // Si falla el parseo pero la red fue bien, tal vez el proxy devolvió error en texto
+                            // Probamos siguiente intento/proxy
+                            throw e; 
+                        }
+
+                    } catch (error) {
+                        console.warn(`Intento fallido con proxy ${proxy} (intento ${i+1}/${retries}):`, error);
+                        if (i === retries - 1) {
+                            // Si fallan todos los intentos con este proxy, pasamos al siguiente (continue loop externo)
+                            break; 
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+            }
+            
+            // Si llegamos aquí, todos los proxies fallaron
+            console.error("Todos los proxies fallaron para URL:", targetUrl);
+            return [];
+        }
 
         // --- LÓGICA DE CONSTRUCCIÓN DE URLs ---
         async function fetchBurgosAPI(resourceType, lineId = '', extraParams = {}) { 
@@ -1154,6 +1177,82 @@
                     </div>`;
                 marker.setPopupContent(popupContent);
             } catch (error) { marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Error info bus.</div>`); }
+        }
+
+        async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) { 
+            let stopName = marker && marker.mode === 'LINE_VIEW' 
+                ? (stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`) 
+                : (allStopData[stopId] ? allStopData[stopId].name : `Parada ${stopId}`);
+            
+            const stopNameHeader = `<div class="font-bold text-2xl text-blue-600 text-center mb-4 border-b pb-2">${stopName} <span class="text-gray-400 font-normal text-lg">#${stopId}</span></div>`;
+
+            if (!isPollingUpdate) modalBody.innerHTML = stopNameHeader + `<div class="text-center py-8 text-gray-500 font-semibold animate-pulse">Cargando horarios...</div>`;
+
+            try {
+                // CAMBIO: Apunta a resourceEstimations con line, tipo=1 y nodoIds (Enlace #3)
+                const estimationsData = await fetchBurgosAPI('resourceEstimations', lineId || '01', { 'nodoIds': stopId });
+                let popupContent = stopNameHeader;
+                let allEstimates = [];
+                
+                 if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
+                      const stopData = estimationsData.find(item => item.nodoId === stopId);
+                      if (stopData && stopData.routeEstimationByNode) {
+                          stopData.routeEstimationByNode.forEach(routeEst => {
+                              if (routeEst.publicEstimationVHExts) {
+                                  routeEst.publicEstimationVHExts.forEach(est => {
+                                      if (est.destination) {
+                                           allEstimates.push({ line: routeEst.line, destination: est.destination, seconds: est.seconds });
+                                      }
+                                  });
+                              }
+                          });
+                      }
+                 }
+                 allEstimates.sort((a, b) => a.seconds - b.seconds);
+
+                 const uniqueEstimates = [];
+                 const seen = new Set();
+                 allEstimates.forEach(est => {
+                    const key = `${est.line}-${est.destination}-${est.seconds}`;
+                    if(!seen.has(key)){
+                        seen.add(key);
+                        uniqueEstimates.push(est);
+                    }
+                 });
+
+                 if (uniqueEstimates.length > 0) {
+                     popupContent += `<div class="text-xs text-gray-400 text-center mb-2">Última actualización: ${new Date().toLocaleTimeString()}</div><div class="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">`;
+                     uniqueEstimates.forEach(est => {
+                         const lineBgColor = LINE_COLORS[est.line] || '#6B7280';
+                         const status = getBusStatusForEstimation(est.line, est.destination);
+                         let dotHtml = '';
+                         if (status) {
+                             let dotClass = 'ontime';
+                             if(status.colorClass === 'bus-retraso') dotClass = 'late';
+                             if(status.colorClass === 'bus-adelanto') dotClass = 'early';
+                             dotHtml = `<span class="status-dot ${dotClass}" title="${status.message}: ${status.details}"></span>`;
+                         }
+
+                         popupContent += `
+                            <div class="flex justify-between items-center p-3 rounded-xl shadow-sm border border-gray-100 hover:bg-gray-50 transition">
+                                <div class="flex items-center">
+                                    <span class="font-bold text-lg p-1 w-12 text-center rounded-lg text-white shadow-sm mr-3" style="background-color: ${lineBgColor};">L${est.line}</span>
+                                    <span class="text-gray-700 font-medium truncate max-w-[150px]" title="${est.destination}">${est.destination}</span>
+                                </div>
+                                <div class="flex items-center">
+                                    ${dotHtml}
+                                    <span class="font-extrabold text-xl text-gray-800">${secondsToTime(est.seconds)}</span>
+                                </div>
+                            </div>`;
+                     });
+                     popupContent += `</div>`;
+                 } else {
+                     popupContent += `<div class="mt-8 text-center"><p class="text-xl text-gray-400">Sin autobuses próximos</p><p class="text-sm text-gray-300 mt-2">Intenta de nuevo en unos momentos</p></div>`;
+                 }
+                 modalBody.innerHTML = popupContent;
+                 if (!stopEstimationInterval) startStopEstimationMonitor(lineId, stopId);
+
+            } catch (error) { modalBody.innerHTML = `${stopNameHeader}<div class="text-red-600 text-center py-4">Error al cargar datos.</div>`; }
         }
 
         // --- FUNCIONES GLOBAL MONITOR FALTANTES ---
