@@ -322,7 +322,8 @@
         // Lista de proxies para evitar bloqueos CORS. Se probarán en orden.
         const PROXIES = [
             'https://corsproxy.io/?',
-            'https://api.allorigins.win/raw?url='
+            'https://api.allorigins.win/raw?url=',
+            'https://api.codetabs.com/v1/proxy?quest='
         ];
 
         const POLLING_LINE_MS = 5000; // Refresco más rápido (5s) para tiempo real
@@ -703,7 +704,8 @@
                         // La URL ya lleva timestamp (_t) para evitar caché
                         const response = await fetch(finalUrl, {
                             method: 'GET',
-                            signal: controller.signal
+                            signal: controller.signal,
+                            referrerPolicy: 'no-referrer' // CRUCIAL para GitHub Pages -> Servidor Ayuntamiento
                         });
                         clearTimeout(id);
 
@@ -785,9 +787,11 @@
                  }
                  else if (resourceType === 'resourceNodes') {
                      // CASO 4: NODOS (TODAS LAS PARADAS)
-                     // URL: ...resourceNodes
+                     // URL: https://movilidad.aytoburgos.es/rutas-en-directo...
+                     // NOTA: Este recurso tiene un dominio/ruta diferente al resto según las indicaciones.
+                     const nodesBaseUrl = 'https://movilidad.aytoburgos.es/rutas-en-directo';
                      dynamicParams.append('p_p_resource_id', 'resourceNodes');
-                     targetUrl = `${BASE_URL}?${PORTLET_BASE_PARAMS}&${dynamicParams.toString()}`;
+                     targetUrl = `${nodesBaseUrl}?${PORTLET_BASE_PARAMS}&${dynamicParams.toString()}`;
                  }
                  // CASO EXTRA: RUTAS (Para dibujar el mapa)
                  else if (resourceType === 'resourceRoutes') {
@@ -1177,82 +1181,6 @@
                     </div>`;
                 marker.setPopupContent(popupContent);
             } catch (error) { marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Error info bus.</div>`); }
-        }
-
-        async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) { 
-            let stopName = marker && marker.mode === 'LINE_VIEW' 
-                ? (stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`) 
-                : (allStopData[stopId] ? allStopData[stopId].name : `Parada ${stopId}`);
-            
-            const stopNameHeader = `<div class="font-bold text-2xl text-blue-600 text-center mb-4 border-b pb-2">${stopName} <span class="text-gray-400 font-normal text-lg">#${stopId}</span></div>`;
-
-            if (!isPollingUpdate) modalBody.innerHTML = stopNameHeader + `<div class="text-center py-8 text-gray-500 font-semibold animate-pulse">Cargando horarios...</div>`;
-
-            try {
-                // CAMBIO: Apunta a resourceEstimations con line, tipo=1 y nodoIds (Enlace #3)
-                const estimationsData = await fetchBurgosAPI('resourceEstimations', lineId || '01', { 'nodoIds': stopId });
-                let popupContent = stopNameHeader;
-                let allEstimates = [];
-                
-                 if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
-                      const stopData = estimationsData.find(item => item.nodoId === stopId);
-                      if (stopData && stopData.routeEstimationByNode) {
-                          stopData.routeEstimationByNode.forEach(routeEst => {
-                              if (routeEst.publicEstimationVHExts) {
-                                  routeEst.publicEstimationVHExts.forEach(est => {
-                                      if (est.destination) {
-                                           allEstimates.push({ line: routeEst.line, destination: est.destination, seconds: est.seconds });
-                                      }
-                                  });
-                              }
-                          });
-                      }
-                 }
-                 allEstimates.sort((a, b) => a.seconds - b.seconds);
-
-                 const uniqueEstimates = [];
-                 const seen = new Set();
-                 allEstimates.forEach(est => {
-                    const key = `${est.line}-${est.destination}-${est.seconds}`;
-                    if(!seen.has(key)){
-                        seen.add(key);
-                        uniqueEstimates.push(est);
-                    }
-                 });
-
-                 if (uniqueEstimates.length > 0) {
-                     popupContent += `<div class="text-xs text-gray-400 text-center mb-2">Última actualización: ${new Date().toLocaleTimeString()}</div><div class="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">`;
-                     uniqueEstimates.forEach(est => {
-                         const lineBgColor = LINE_COLORS[est.line] || '#6B7280';
-                         const status = getBusStatusForEstimation(est.line, est.destination);
-                         let dotHtml = '';
-                         if (status) {
-                             let dotClass = 'ontime';
-                             if(status.colorClass === 'bus-retraso') dotClass = 'late';
-                             if(status.colorClass === 'bus-adelanto') dotClass = 'early';
-                             dotHtml = `<span class="status-dot ${dotClass}" title="${status.message}: ${status.details}"></span>`;
-                         }
-
-                         popupContent += `
-                            <div class="flex justify-between items-center p-3 rounded-xl shadow-sm border border-gray-100 hover:bg-gray-50 transition">
-                                <div class="flex items-center">
-                                    <span class="font-bold text-lg p-1 w-12 text-center rounded-lg text-white shadow-sm mr-3" style="background-color: ${lineBgColor};">L${est.line}</span>
-                                    <span class="text-gray-700 font-medium truncate max-w-[150px]" title="${est.destination}">${est.destination}</span>
-                                </div>
-                                <div class="flex items-center">
-                                    ${dotHtml}
-                                    <span class="font-extrabold text-xl text-gray-800">${secondsToTime(est.seconds)}</span>
-                                </div>
-                            </div>`;
-                     });
-                     popupContent += `</div>`;
-                 } else {
-                     popupContent += `<div class="mt-8 text-center"><p class="text-xl text-gray-400">Sin autobuses próximos</p><p class="text-sm text-gray-300 mt-2">Intenta de nuevo en unos momentos</p></div>`;
-                 }
-                 modalBody.innerHTML = popupContent;
-                 if (!stopEstimationInterval) startStopEstimationMonitor(lineId, stopId);
-
-            } catch (error) { modalBody.innerHTML = `${stopNameHeader}<div class="text-red-600 text-center py-4">Error al cargar datos.</div>`; }
         }
 
         // --- FUNCIONES GLOBAL MONITOR FALTANTES ---
