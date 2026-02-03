@@ -659,8 +659,17 @@
         function getRouteDestination(lineId, routeId) { 
              const lineVariants = allRoutes[lineId];
              if (!lineVariants) return "Desconocido";
-             const variant = lineVariants.find(v => v.id === routeId);
-             return variant ? (variant.label.includes(' - ') ? variant.label.split(' - ')[1] : variant.label) : "Desconocido";
+             // Busqueda flexible (string vs number)
+             const variant = lineVariants.find(v => v.id == routeId);
+             
+             if (!variant) return "Desconocido";
+             
+             // Limpiar label (quitar "L1 - " o "L2 - " si existe)
+             let label = variant.label || "";
+             if (label.includes(' - ')) {
+                 return label.split(' - ').slice(1).join(' - ');
+             }
+             return label;
         }
         
         function clearMapLayers() { 
@@ -1064,100 +1073,6 @@
             return null;
         }
 
-        async function loadEstimationsForStop(lineId, stopId, marker, isPollingUpdate = false) { 
-            let stopName = marker && marker.mode === 'LINE_VIEW' 
-                ? (stopDataCache[lineId] && stopDataCache[lineId][stopId] ? stopDataCache[lineId][stopId].name : `Parada ${stopId}`) 
-                : (allStopData[stopId] ? allStopData[stopId].name : `Parada ${stopId}`);
-            
-            const stopNameHeader = `<div class="font-bold text-2xl text-blue-600 text-center mb-4 border-b pb-2">${stopName} <span class="text-gray-400 font-normal text-lg">#${stopId}</span></div>`;
-
-            if (!isPollingUpdate) modalBody.innerHTML = stopNameHeader + `<div class="text-center py-8 text-gray-500 font-semibold animate-pulse">Cargando horarios...</div>`;
-
-            try {
-                // CAMBIO: Apunta a resourceEstimations con line, tipo=1 y nodoIds (Enlace #3)
-                const estimationsData = await fetchBurgosAPI('resourceEstimations', lineId || '01', { 'nodoIds': stopId });
-                let popupContent = stopNameHeader;
-                let allEstimates = [];
-                
-                 if (estimationsData && Array.isArray(estimationsData) && estimationsData.length > 0) {
-                      const stopData = estimationsData.find(item => item.nodoId === stopId);
-                      if (stopData && stopData.routeEstimationByNode) {
-                          stopData.routeEstimationByNode.forEach(routeEst => {
-                              if (routeEst.publicEstimationVHExts) {
-                                  routeEst.publicEstimationVHExts.forEach(est => {
-                                      if (est.destination) {
-                                           allEstimates.push({ line: routeEst.line, destination: est.destination, seconds: est.seconds });
-                                      }
-                                  });
-                              }
-                          });
-                      }
-                 }
-                 allEstimates.sort((a, b) => a.seconds - b.seconds);
-
-                 const uniqueEstimates = [];
-                 const seen = new Set();
-                 allEstimates.forEach(est => {
-                    const key = `${est.line}-${est.destination}-${est.seconds}`;
-                    if(!seen.has(key)){
-                        seen.add(key);
-                        uniqueEstimates.push(est);
-                    }
-                 });
-
-                 if (uniqueEstimates.length > 0) {
-                     popupContent += `<div class="text-xs text-gray-400 text-center mb-2">Última actualización: ${new Date().toLocaleTimeString()}</div><div class="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">`;
-                     uniqueEstimates.forEach(est => {
-                         const lineBgColor = LINE_COLORS[est.line] || '#6B7280';
-                         const status = getBusStatusForEstimation(est.line, est.destination);
-                         let dotHtml = '';
-                         if (status) {
-                             let dotClass = 'ontime';
-                             if(status.colorClass === 'bus-retraso') dotClass = 'late';
-                             if(status.colorClass === 'bus-adelanto') dotClass = 'early';
-                             dotHtml = `<span class="status-dot ${dotClass}" title="${status.message}: ${status.details}"></span>`;
-                         }
-
-                         popupContent += `
-                            <div class="flex justify-between items-center p-3 rounded-xl shadow-sm border border-gray-100 hover:bg-gray-50 transition">
-                                <div class="flex items-center">
-                                    <span class="font-bold text-lg p-1 w-12 text-center rounded-lg text-white shadow-sm mr-3" style="background-color: ${lineBgColor};">L${est.line}</span>
-                                    <span class="text-gray-700 font-medium truncate max-w-[150px]" title="${est.destination}">${est.destination}</span>
-                                </div>
-                                <div class="flex items-center">
-                                    ${dotHtml}
-                                    <span class="font-extrabold text-xl text-gray-800">${secondsToTime(est.seconds)}</span>
-                                </div>
-                            </div>`;
-                     });
-                     popupContent += `</div>`;
-                 } else {
-                     popupContent += `<div class="mt-8 text-center"><p class="text-xl text-gray-400">Sin autobuses próximos</p><p class="text-sm text-gray-300 mt-2">Intenta de nuevo en unos momentos</p></div>`;
-                 }
-                 modalBody.innerHTML = popupContent;
-                 if (!stopEstimationInterval) startStopEstimationMonitor(lineId, stopId);
-
-            } catch (error) { modalBody.innerHTML = `${stopNameHeader}<div class="text-red-600 text-center py-4">Error al cargar datos.</div>`; }
-        }
-        
-        function startGlobalVehicleMonitor() { 
-             if (globalMonitorInterval) clearInterval(globalMonitorInterval);
-             updateAllVehiclesGlobally();
-             globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_GLOBAL_MS);
-        }
-        
-        async function updateAllVehiclesGlobally() { 
-             // CAMBIO: Aseguramos que se llama con la estructura nueva
-             const linePromises = ALL_LINES.map(lineId => fetchBurgosAPI('resourceVehicles', lineId).then(data => ({ lineId, data })).catch(() => ({ lineId, data: [] })));
-             const results = await Promise.all(linePromises);
-             const newActiveBuses = new Map();
-             results.forEach(result => {
-                 if (Array.isArray(result.data)) result.data.forEach(bus => newActiveBuses.set(bus.id.toString(), { ...bus, lineId: result.lineId }));
-             });
-             ALL_ACTIVE_BUSES.clear();
-             newActiveBuses.forEach((bus, id) => ALL_ACTIVE_BUSES.set(id, bus));
-        }
-
         async function loadNextStopEstimation(busId, lineId, marker) { 
             const busData = ALL_ACTIVE_BUSES.get(busId.toString()); 
             const fleetData = BUS_FLEET_DATA[busId];
@@ -1165,13 +1080,28 @@
 
             const punctuality = getPunctualityInfo(busData.desfaseEspacio);
             try {
+                // LOGICA DESTINO MEJORADA
                 const destination = getRouteDestination(lineId, busData.ruta);
                 
+                // LOGICA PROXIMA PARADA MEJORADA
                 let nextStopName = "Calculando...";
-                if (busData.paradaProxima && allStopData[busData.paradaProxima]) {
-                    nextStopName = allStopData[busData.paradaProxima].name;
-                } else if (busData.paradaProxima) {
-                    nextStopName = `ID ${busData.paradaProxima}`;
+                const nextStopId = busData.paradaProxima || busData.nextNodeId || busData.nextStop; 
+
+                if (nextStopId) {
+                     // 1. Buscar en cache de línea actual
+                    if (stopDataCache[lineId] && stopDataCache[lineId][nextStopId]) {
+                         nextStopName = stopDataCache[lineId][nextStopId].name;
+                    }
+                    // 2. Buscar en cache global
+                    else if (allStopData[nextStopId]) {
+                         nextStopName = allStopData[nextStopId].name;
+                    } 
+                    // 3. Fallback: mostrar ID
+                    else {
+                         nextStopName = `ID ${nextStopId}`;
+                    }
+                } else {
+                    nextStopName = "Desconocida";
                 }
 
                 let fleetInfo = fleetData ? `
@@ -1196,7 +1126,7 @@
                         <div class="pt-2">
                             <div class="mb-2">
                                 <p class="text-xs text-gray-400 uppercase tracking-wide">Destino</p>
-                                <p class="text-sm font-bold text-gray-800 truncate">${destination}</p>
+                                <p class="text-sm font-bold text-gray-800 truncate" title="${destination}">${destination}</p>
                             </div>
                             
                             <div class="mb-2 flex items-center justify-between">
@@ -1212,7 +1142,7 @@
 
                             <div class="mb-1">
                                 <p class="text-xs text-gray-400 uppercase tracking-wide">Próxima Parada</p>
-                                <p class="text-sm font-medium text-gray-700 truncate">${nextStopName}</p>
+                                <p class="text-sm font-medium text-gray-700 truncate" title="${nextStopName}">${nextStopName}</p>
                             </div>
 
                             ${fleetInfo}
@@ -1225,6 +1155,25 @@
                 marker.setPopupContent(popupContent);
             } catch (error) { marker.setPopupContent(`<div class="text-red-600 font-semibold text-center">Error info bus.</div>`); }
         }
+
+        // --- FUNCIONES GLOBAL MONITOR FALTANTES ---
+        function startGlobalVehicleMonitor() { 
+             if (globalMonitorInterval) clearInterval(globalMonitorInterval);
+             updateAllVehiclesGlobally();
+             globalMonitorInterval = setInterval(updateAllVehiclesGlobally, POLLING_GLOBAL_MS);
+        }
+        
+        async function updateAllVehiclesGlobally() { 
+             // CAMBIO: Aseguramos que se llama con la estructura nueva
+             const linePromises = ALL_LINES.map(lineId => fetchBurgosAPI('resourceVehicles', lineId).then(data => ({ lineId, data })).catch(() => ({ lineId, data: [] })));
+             const results = await Promise.all(linePromises);
+             const newActiveBuses = new Map();
+             results.forEach(result => {
+                 if (Array.isArray(result.data)) result.data.forEach(bus => newActiveBuses.set(bus.id.toString(), { ...bus, lineId: result.lineId }));
+             });
+             ALL_ACTIVE_BUSES.clear();
+             newActiveBuses.forEach((bus, id) => ALL_ACTIVE_BUSES.set(id, bus));
+        }
         
         function updateBusMarkers(lineId, vehiclesData) { 
              const vehicles = vehiclesData || [];
@@ -1236,7 +1185,14 @@
                  
                  if (isNaN(bus.lat) || isNaN(bus.lng)) return; 
                  
-                 ALL_ACTIVE_BUSES.set(busId, { ...bus, lineId });
+                 // NORMALIZACION DATOS (Parada Proxima puede venir como paradaProxima o nextNodeId)
+                 const normalizedBus = { 
+                     ...bus, 
+                     lineId,
+                     paradaProxima: bus.paradaProxima || bus.nextNodeId || bus.nextStop 
+                 };
+
+                 ALL_ACTIVE_BUSES.set(busId, normalizedBus);
 
                  let marker = busMarkers.get(busId);
                  const punctuality = getPunctualityInfo(bus.desfaseEspacio);
