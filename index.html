@@ -228,6 +228,9 @@
             <button id="btn-show-bus-search" class="w-full sm:w-80 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
                 🔍 Buscar Bus por Flota (Calca/Matrícula)
             </button>
+            <button id="btn-show-pdfs" class="w-full sm:w-80 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition duration-150 ease-in-out text-xl transform hover:scale-105">
+                📄 Horarios PDF
+            </button>
         </div>
 
         <!-- VISTA DE BÚSQUEDA DE BUS POR FLOTA -->
@@ -280,6 +283,12 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- VISTA DE LISTADO DE PDFs -->
+        <div id="pdf-list-controls" class="bg-white p-6 rounded-xl shadow-2xl mb-8 hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Descargar Horarios (PDF)</h2>
+            <div id="pdf-list-container" class="space-y-3 max-h-96 overflow-y-auto pr-2"></div>
         </div>
 
         <!-- Contenedor del Mapa (Wrapper) -->
@@ -339,7 +348,8 @@
             MENU: 'MENU',
             STOP_MAP: 'STOP_MAP',
             LINE_VIEW: 'LINE_VIEW',
-            BUS_SEARCH: 'BUS_SEARCH'
+            BUS_SEARCH: 'BUS_SEARCH',
+            PDF_LIST: 'PDF_LIST'
         };
         let currentView = VIEWS.MENU;
         let lineId = null;
@@ -351,6 +361,38 @@
         const ALL_LINES = [
             '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17',
             '18', '19', '20', '21', '22', '23', '73', '87', '88', '89', 'C1', 'C2'
+        ];
+
+        // --- DATOS PDFs EXTRAIDOS DEL JSON ---
+        const PDF_DATA = [
+            { id: "01", title: "Línea 1: Avda. Arlanzón - Gamonal", uuid: "d72e4594-c8f7-6cd5-4a86-d71ef4b28612" },
+            { id: "02", title: "Línea 2: Carretera de Arcos - HUBU - FFCC", uuid: "80e5141d-2ac5-98aa-69f8-6968667447c2" },
+            { id: "03", title: "Línea 3: San Juan Bautista - HUBU - Vista Alegre", uuid: "13ac912c-85d8-620f-3cb3-39ce52088f19" },
+            { id: "04", title: "Línea 4: Divino Vallés - HUBU - Ventilla - Castañares", uuid: "7d97e633-5e71-e450-d4b0-66a6735cc585" },
+            { id: "05", title: "Línea 5: Barrio El Pilar - UBU - HUBU - Vista Alegre", uuid: "1b21dc76-6c81-36e4-e502-8b1a45586c56" },
+            { id: "06", title: "Línea 6: Plaza España - Ismael García Rámila", uuid: "01d720ba-2788-2b92-f292-6fdc6bd5d151" },
+            { id: "07", title: "Línea 7: Barrio El Pilar - UBU - Vista Alegre", uuid: "1f1364d3-3a4e-6d9b-b564-1ea89d2bdb91" },
+            { id: "08", title: "Línea 8: Gran Teatro - Villafría", uuid: "6f559ad5-d045-9a8e-6d05-30fdb7d90be5" },
+            { id: "09", title: "Línea 9: Plaza España - Parque Europa - Residencia Cortes", uuid: "ce295437-2db9-d205-fd36-d55978b77e46" },
+            { id: "10", title: "Línea 10: Gran Teatro - Derechos Humanos", uuid: "9e503a33-8131-03df-7525-687e1db0f03c" },
+            { id: "11", title: "Línea 11: Plaza España - Villimar", uuid: "c408a986-15ea-d686-4e7f-2c5f4b2e4920" },
+            { id: "12", title: "Línea 12: FFCC (Rosa Manzano) - UBU (Politécnica)", uuid: "68644b72-1938-004b-f15c-0f8a50d713d7" },
+            { id: "13", title: "Línea 13: Gamonal - HUBU - Divino Valles", uuid: "42535da0-18de-3d55-ab4b-a8aad16545ef" },
+            { id: "14", title: "Línea 14: Plaza España - Divino Valles - Villatoro", uuid: "7f6d74f0-b17a-9c5d-aa5c-984e29c82c05" },
+            { id: "15", title: "Línea 15: Soportales de Antón - Centro Histórico", uuid: "5cdbf67d-d70a-0e89-c48e-1f683a87e741" },
+            { id: "16", title: "Línea 16: Carretera de Arcos - HUBU", uuid: "b48a111d-6552-8aeb-f1b0-d581b080e0db" },
+            { id: "17", title: "Línea 17: Plaza España - Fuentes Blancas", uuid: "05e9f466-5781-6fb1-c09f-0e5242d41c1b" },
+            { id: "18", title: "Línea 18: Plaza Mío Cid - Fuentecillas", uuid: "0449144e-1d09-bc29-fa25-f3b32d525c2a" },
+            { id: "19", title: "Línea 19: Plaza Mío Cid - Villalonquéjar", uuid: "e9ac94fd-0e09-faec-4930-ebdfc04cd131" },
+            { id: "20", title: "Línea 20: Plaza España - Fuentes Blancas", uuid: "ef6c63b5-19e6-362b-c606-2e4532352d5a" },
+            { id: "21", title: "Línea 21: Plaza España - Cortes", uuid: "bcbb5d5c-c902-a08b-96ae-16bc3ed4f526" },
+            { id: "22", title: "Línea 22: Bulevar - HUBU", uuid: "a48d65b5-e097-6654-3b61-1088c2bfacb8" },
+            { id: "C1", title: "Línea 22 C1: Circular (sentido horario)", uuid: "49b2d377-2782-deee-3dfd-d3a71fb45f02" },
+            { id: "C2", title: "Línea 22 C2: Circular (sentido antihorario)", uuid: "9e4714b6-e3c5-c5aa-2678-3a7910a88646" },
+            { id: "23", title: "Línea 23: Plaza España - FFCC (Rosa Manzano)", uuid: "5884dff4-d694-7abb-2eb1-ec664fb2a0a0" },
+            { id: "87", title: "Línea 87: BÚHO Carretera de Arcos - Villímar", uuid: "1d557f5a-6643-b169-dea6-09573ae27b0d" },
+            { id: "88", title: "Línea 88: BÚHO Avenida del Arlanzón - Gamonal", uuid: "30f43785-7426-83e7-57ef-bfd88bc9b1c1" },
+            { id: "89", title: "Línea 89: Cementerio - Cartuja", uuid: "3527c027-219b-9530-3655-325ca9a98361" }
         ];
 
         const LINE_COLORS = {
@@ -458,6 +500,7 @@
         const stopsMapControls = document.getElementById('stops-map-controls');
         const lineViewControls = document.getElementById('line-view-controls');
         const busSearchControls = document.getElementById('bus-search-controls');
+        const pdfListControls = document.getElementById('pdf-list-controls'); // Nueva referencia
         const mapContainerWrapper = document.getElementById('map-container-wrapper');
         const homeBtn = document.getElementById('home-btn');
         const headerSubtitle = document.getElementById('header-subtitle');
@@ -471,6 +514,7 @@
         const btnShowStopsMap = document.getElementById('btn-show-stops-map');
         const btnShowLinesList = document.getElementById('btn-show-lines-list');
         const btnShowBusSearch = document.getElementById('btn-show-bus-search');
+        const btnShowPdfs = document.getElementById('btn-show-pdfs'); // Nuevo botón
         
         const stopSearchInput = document.getElementById('stop-search-input');
         const stopSearchResults = document.getElementById('stop-search-results');
@@ -481,6 +525,7 @@
         const busSearchResultsCalca = document.getElementById('bus-search-results-calca');
         const busSearchMatricula = document.getElementById('bus-search-matricula');
         const busSearchResultsMatricula = document.getElementById('bus-search-results-matricula');
+        const pdfListContainer = document.getElementById('pdf-list-container'); // Nuevo contenedor
         
         const loadingOverlay = document.getElementById('loading-overlay');
         const fullscreenBtn = document.getElementById('fullscreen-btn');
@@ -521,6 +566,7 @@
             stopsMapControls.classList.add('hidden');
             lineViewControls.classList.add('hidden');
             busSearchControls.classList.add('hidden');
+            pdfListControls.classList.add('hidden'); // Ocultar PDFs
             mapContainerWrapper.classList.add('hidden');
             homeBtn.classList.add('hidden');
             
@@ -566,6 +612,12 @@
                 busSearchControls.classList.remove('hidden');
                 homeBtn.classList.remove('hidden');
                 headerSubtitle.textContent = 'Encuentra un bus por su ID de flota (Calca) o Matrícula.';
+                stopUserLocationMonitor();
+            } else if (view === VIEWS.PDF_LIST) { // Nueva vista
+                pdfListControls.classList.remove('hidden');
+                homeBtn.classList.remove('hidden');
+                headerSubtitle.textContent = 'Descarga los horarios oficiales en formato PDF.';
+                loadPdfList();
                 stopUserLocationMonitor();
             }
             
@@ -816,6 +868,7 @@
             btnShowStopsMap.onclick = () => navigate(VIEWS.STOP_MAP);
             btnShowLinesList.onclick = () => navigate(VIEWS.LINE_VIEW);
             btnShowBusSearch.onclick = () => navigate(VIEWS.BUS_SEARCH);
+            btnShowPdfs.onclick = () => navigate(VIEWS.PDF_LIST); // Evento nuevo botón
             homeBtn.onclick = goHome;
             fullscreenBtn.onclick = toggleMapFullscreen;
             modalCloseBtn.onclick = hideModal;
@@ -836,6 +889,50 @@
             setupEventListeners();
             startGlobalVehicleMonitor();
             restoreStateFromURL();
+        }
+
+        // --- Carga de Lista de PDFs (NUEVO) ---
+        function loadPdfList() {
+            pdfListContainer.innerHTML = '';
+            
+            // Definir el orden explícito solicitado: 1-22, C1, C2, 23, 73, 87-89
+            const ORDERED_IDS = [
+                '01', '02', '03', '04', '05', '06', '07', '08', '09', '10',
+                '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+                '21', '22', 'C1', 'C2', '23', '73', '87', '88', '89'
+            ];
+
+            // Ordenar datos usando el índice en el array de orden
+            const sortedData = [...PDF_DATA].sort((a, b) => {
+                const indexA = ORDERED_IDS.indexOf(a.id);
+                const indexB = ORDERED_IDS.indexOf(b.id);
+                // Si alguno no está en la lista (fallback), ponerlo al final
+                if (indexA === -1) return 1;
+                if (indexB === -1) return -1;
+                return indexA - indexB;
+            });
+
+            sortedData.forEach(item => {
+                const color = LINE_COLORS[item.id] || '#6B7280';
+                const pdfUrl = `https://www.aytoburgos.es/documents/413443/${item.uuid}`;
+                
+                // Lógica de texto del icono: C1/C2 explícitos, resto quita letras (ej: 01 -> 01)
+                let iconText = item.id.replace(/[A-Z]/g, '');
+                if (item.id === 'C1') iconText = 'C1';
+                if (item.id === 'C2') iconText = 'C2';
+                
+                pdfListContainer.insertAdjacentHTML('beforeend', `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl shadow-md hover:bg-gray-100 transition duration-150">
+                        <span class="text-md sm:text-lg font-bold text-gray-700 flex items-center flex-1 pr-2">
+                            <span class="h-6 w-6 rounded-full mr-3 shadow-sm flex-shrink-0 flex items-center justify-center text-white text-xs" style="background-color: ${color};">${iconText}</span>
+                            ${item.title}
+                        </span>
+                        <a href="${pdfUrl}" target="_blank" class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md transition flex items-center whitespace-nowrap">
+                            📥 PDF
+                        </a>
+                    </div>
+                `);
+            });
         }
         
         // --- Buscador Flota ---
@@ -1083,6 +1180,84 @@
         
         function stopStopEstimationMonitor() { if (stopEstimationInterval) { clearInterval(stopEstimationInterval); stopEstimationInterval = null; } }
 
+        // --- NEW: Function to load estimations for a stop ---
+        async function loadEstimationsForStop(lineId, stopId, marker, isUpdate = false) {
+            if (!isUpdate) {
+                modalBody.innerHTML = '<div class="flex flex-col items-center justify-center py-8"><svg class="animate-spin h-8 w-8 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="text-gray-500 font-medium">Consultando satélite...</p></div>';
+                // Delegamos la carga inicial al monitor para evitar código duplicado
+                startStopEstimationMonitor(lineId, stopId);
+                return;
+            }
+
+            try {
+                // Fetch estimations
+                // Note: The Burgos API often returns an array of objects.
+                const estimations = await fetchBurgosAPI('resourceEstimations', lineId || '', { nodoIds: stopId });
+                
+                let html = '';
+                const stopName = (allStopData[stopId] && allStopData[stopId].name) || `Parada ${stopId}`;
+                
+                html += `<div class="sticky top-0 bg-white pb-2 border-b mb-4">
+                            <h3 class="text-xl font-bold text-gray-800">${stopName}</h3>
+                            <p class="text-xs text-gray-500">ID Parada: ${stopId}</p>
+                         </div>`;
+                
+                if (!estimations || estimations.length === 0) {
+                    html += `<div class="p-6 bg-gray-50 text-gray-500 rounded-lg text-center flex flex-col items-center">
+                                <span class="text-2xl mb-2">🚏</span>
+                                <p>No hay estimaciones disponibles.</p>
+                                <p class="text-xs mt-1">Es posible que no haya servicio o el bus esté en cabecera.</p>
+                             </div>`;
+                } else {
+                    html += `<div class="space-y-3">`;
+                    
+                    estimations.forEach(est => {
+                        const line = est.line || lineId || '?';
+                        const color = LINE_COLORS[line] || '#6B7280';
+                        const timeText = secondsToTime(est.seconds);
+                        const dest = est.destination || 'Destino desconocido';
+                        const distance = est.meters;
+                        
+                        html += `
+                            <div class="relative overflow-hidden flex items-center justify-between p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: ${color};"></div>
+                                <div class="flex items-center space-x-4 pl-2">
+                                    <div class="h-12 w-12 flex-shrink-0 flex items-center justify-center rounded-full text-white font-bold text-lg shadow-sm" style="background-color: ${color};">
+                                        ${line}
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-gray-800 text-sm sm:text-base leading-tight">${dest}</p>
+                                        <p class="text-xs text-gray-500 mt-1 flex items-center">
+                                            <span class="mr-1">📏</span> ${distance ? distance + ' m' : 'En parada'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="text-right pl-2">
+                                    <span class="block text-xl sm:text-2xl font-black text-gray-900 tracking-tight">${timeText}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                }
+                
+                html += `<div class="mt-6 text-center">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                🟢 En vivo: ${new Date().toLocaleTimeString()}
+                            </span>
+                         </div>`;
+                
+                modalBody.innerHTML = html;
+
+            } catch (e) {
+                console.error("Error loading estimations", e);
+                modalBody.innerHTML = `<div class="text-center text-red-600 py-8">
+                                        <p class="font-bold">Error de conexión</p>
+                                        <p class="text-xs text-gray-500 mt-2">${e.message}</p>
+                                       </div>`;
+            }
+        }
+
         function startStopEstimationMonitor(lineId, stopId) { 
             stopStopEstimationMonitor();
             const poller = async () => {
@@ -1121,7 +1296,7 @@
                 const nextStopId = busData.paradaProxima || busData.nextNodeId || busData.nextStop; 
 
                 if (nextStopId) {
-                     // 1. Buscar en cache de línea actual
+                      // 1. Buscar en cache de línea actual
                     if (stopDataCache[lineId] && stopDataCache[lineId][nextStopId]) {
                          nextStopName = stopDataCache[lineId][nextStopId].name;
                     }
@@ -1266,6 +1441,3 @@
     </script>
 </body>
 </html>
-
-
-
